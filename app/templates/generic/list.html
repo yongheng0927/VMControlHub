@@ -1,0 +1,490 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ model_name }} - VM Control Hub{% endblock %}
+
+{% block header_title %}{{ model_name }}{% endblock %}
+
+{% block active_page %}vms{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/generic/list.css') }}">
+<script src="{{ url_for('static', filename='vendor/sortable.min.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto">
+  <h1 class="text-[clamp(1.25rem,2vw,2rem)] font-bold mb-4 text-neutral">{{ model_name }} List</h1>
+
+  <!-- 全局搜索 - 尺寸优化 -->
+  <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-2">
+    <div class="flex flex-1 max-w-xl">
+      <div class="relative flex-1">
+        <input type="text" id="global-search" placeholder="Search..." value="{{ search }}"
+               class="w-full pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all text-xs">
+        <i class="fa fa-search absolute left-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs"></i>
+      </div>
+      <button id="search-btn" class="ml-2 px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 btn-float text-xs">
+        <i class="fa fa-search mr-1 text-xs"></i>Search
+      </button>
+      <button id="reset-btn" class="ml-2 px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 btn-float text-xs">
+        <i class="fa fa-refresh mr-1 text-xs"></i>Reset
+      </button>
+    </div>
+    <div class="flex space-x-1">
+      <button id="table-set-btn" class="px-2.5 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 btn-float flex items-center text-xs">
+        <i class="fa fa-table mr-1 text-xs"></i>Table Settings
+      </button>
+      {% if not no_import and current_user.role in ['admin', 'manager'] %}
+      <button type="button" id="import-data-btn" class="px-2.5 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 btn-float text-xs">
+        <i class="fa fa-download mr-1 text-xs"></i>Import
+      </button>
+      {% endif %}
+      {% if not no_add %}
+      <a href="{{ url_for('generic_crud.create_view', model_name=route_base) }}" class="px-2.5 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 btn-float text-xs flex items-center">
+        <i class="fa fa-plus mr-1 text-xs"></i>Add
+      </a>
+      {% endif %}
+      <a href="{{ url_for('generic_crud.export_csv_view', model_name=route_base,** request.args) }}" class="px-2.5 py-1 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 btn-float text-xs flex items-center">
+        <i class="fa fa-upload mr-1 text-xs"></i>Export
+      </a>
+    </div>
+  </div>
+
+  <!-- 数据表格 -->
+  <div class="bg-white rounded-xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg">
+    <!-- 批量操作工具栏 -->
+    {% if not no_bulk_edit and not no_bulk_delete %}
+    <div id="bulk-actions-bar" class="bulk-actions-bar">
+      <div class="flex items-center">
+        <span id="selected-count" class="text-xs font-medium mr-4 table-field-value">Selected 0 items</span>
+        {% if not no_bulk_edit %}
+        <button id="bulk-edit-btn" class="px-2 py-1 bg-blue-600 text-white rounded text-xs mr-2 disabled:opacity-50 disabled:cursor-not-allowed table-field-value" disabled>
+          <i class="fa fa-pencil mr-1"></i>Bulk Edit
+        </button>
+        {% endif %}
+        {% if not no_bulk_delete %}
+        <button id="bulk-delete-btn" class="px-2 py-1 bg-red-600 text-white rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed table-field-value" disabled>
+          <i class="fa fa-trash mr-1"></i>Bulk Delete
+        </button>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="max-h-[calc(110vh-350px)] overflow-auto scrollbar-thin">
+      <table class="w-full border-collapse ultra-compact-table">
+        <thead>
+          <tr class="bg-gray-50 sticky top-0 z-10">
+            <!-- 全选复选框 -->
+            {% if (not no_bulk_edit and current_user.role in ['admin', 'manager']) or (not no_bulk_delete and current_user.role == 'admin') %}
+            <th class="px-3 py-2 w-8 text-center border-b border-gray-200">
+              <input type="checkbox" id="select-all-rows" class="w-4 h-4 text-primary focus:ring-primary rounded cursor-pointer">
+            </th>
+            {% endif %}
+
+            {% for field in visible_fields %}
+            <th class="px-3 py-2 text-left font-semibold text-gray-700 border-b border-gray-200">
+              <div class="flex items-center">
+                <!-- 排序按钮 -->
+                {% if field.sortable %}
+                <a href="{{ url_for('generic_crud.list_view', model_name=route_base, sort=field.db_field, order='asc' if sort_by == field.db_field and sort_order == 'desc' else 'desc', **request.args|omit('sort', 'order')) }}"
+                   class="flex items-center hover:text-primary">
+                  {{ field.label }}
+                  <span class="sort-icon ml-1 {% if sort_by == field.db_field %}sort-active{% endif %}">
+                    {% if sort_by == field.db_field and sort_order == 'asc' %}
+                      <i class="fa fa-sort-up"></i>
+                    {% elif sort_by == field.db_field and sort_order == 'desc' %}
+                      <i class="fa fa-sort-down"></i>
+                    {% else %}
+                      <i class="fa fa-sort"></i>
+                    {% endif %}
+                  </span>
+                </a>
+                {% else %}
+                {{ field.label }}
+                {% endif %}
+
+                {% if field.filterable %}
+                <button class="filter-btn ml-1 text-gray-500 hover:text-gray-700 transition-colors" data-field="{{ field.db_field }}">
+                  <i class="fa fa-filter table-field-value"></i>
+                </button>
+                {% endif %}
+                {% if field.db_field in filter_params %}
+                <span class="ml-1 text-xs text-blue-600 table-field-value"><i class="fa fa-check-circle"></i></span>
+                {% endif %}
+              </div>
+            </th>
+            {% endfor %}
+
+            <!-- 动态判断是否显示ACTION列 -->
+            {% set showActionColumn = not (no_edit and no_delete) and (current_user.role == 'admin' or (current_user.role == 'manager' and model_name.lower() != 'users')) %}
+            {% if showActionColumn %}
+            <th class="px-3 py-2 text-left font-semibold text-gray-700 border-b border-gray-200">
+              ACTION
+            </th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr class="table-row-animate hover:bg-gray-50 border-b border-gray-100" data-id="{{ item.id }}">
+            <!-- 行选择复选框 -->
+            {% if (not no_bulk_edit and current_user.role in ['admin', 'manager']) or (not no_bulk_delete and current_user.role == 'admin') %}
+            <td class="px-3 py-2 text-center">
+              <input type="checkbox" class="row-checkbox w-4 h-4 text-primary focus:ring-primary rounded cursor-pointer" data-id="{{ item.id }}">
+            </td>
+            {% endif %}
+
+            {% for field in visible_fields %}
+            <td class="px-3 py-2">
+              {% if field.db_field in ['action', 'status'] %}
+                {% set value = (item[field.db_field]) | lower %}
+                {% if value == 'create'  %}
+                 <span class="green-badge">Create</span>
+                {% elif value == 'update' %}
+                 <span class="blue-badge">Update</span>
+                {% elif value == 'delete' %}
+                 <span class="red-badge">Delete</span>
+                {% elif value == 'active' %}
+                 <span class="green-badge">Active</span>
+                {% elif value == 'inactive' %}
+                 <span class="gray-badge">Inactive</span>
+                {% elif value == 'start' %}
+                 <span class="green-badge">Start</span>
+                {% elif value == 'shutdown' %}
+                 <span class="red-badge">Shutdown</span>
+                {% elif value == 'reboot' %}
+                 <span class="blue-badge">Reboot</span>
+                {% elif value == 'success' %}
+                 <span class="green-badge">Success</span>
+                {% elif value == 'failed' %}
+                 <span class="red-badge">Failed</span>
+                {% endif %}
+
+              {% elif field.render %}
+                <div class="table-field-value">{{ field.render(item)|safe }}</div>
+              {% elif field.db_field == 'created_at' or field.db_field == 'updated_at' %}
+                <div class="text-gray-700 table-field-value">
+                  {% set dt_str = item[field.db_field].strftime('%Y-%m-%d %H:%M:%S') if item[field.db_field] else '' %}
+                    {{ dt_str }}
+                </div>
+              {% elif field.postfix %}
+                <div class="text-gray-700 table-field-value">{{ item[field.db_field] or '-' }}{{ field.postfix }}</div>
+              {% else %}
+                <div class="text-gray-700 table-field-value">{{ item[field.db_field] or '-' }}</div>
+              {% endif %}
+            </td>
+            {% endfor %}
+
+            <!-- 动态渲染ACTION列（只在需要时显示） -->
+            {% if showActionColumn %}
+            <td class="px-3 py-2">
+              {% if current_user.role == 'admin' %}
+              <!-- Admin可见所有操作 -->
+              <div class="flex space-x-1">
+                {% if not no_edit %}
+                <a href="{{ url_for('generic_crud.edit_view', model_name=route_base, id=item.id) }}"
+                   class="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-full transition-colors has-tooltip edit-btn">
+                  <i class="fa fa-pencil table-field-value"></i>
+                  <span class="tooltip table-field-value">Edit</span>
+                </a>
+                {% endif %}
+
+                {% if model_name.lower() == 'users' %}
+                <form method="POST" action="{{ url_for('generic_crud.reset_user_password', model_name=route_base) }}"
+                      class="inline-block" onsubmit="return confirm('Are you sure you want to reset the password for user {{ item.username }} to default?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="user_id" value="{{ item.id }}">
+                  <button type="submit" class="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-full transition-colors has-tooltip reset-password-btn">
+                    <i class="fa fa-key table-field-value"></i>
+                    <span class="tooltip table-field-value">Reset Password</span>
+                  </button>
+                </form>
+                {% endif %}
+
+                {% if not no_delete %}
+                <form method="POST" action="{{ url_for('generic_crud.delete_view', model_name=route_base, id=item.id) }}"
+                      class="inline-block" onsubmit="return confirm('Are you sure you want to delete this record?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full transition-colors has-tooltip delete-btn">
+                    <i class="fa fa-trash table-field-value"></i>
+                    <span class="tooltip table-field-value">Delete</span>
+                  </button>
+                </form>
+                {% endif %}
+              </div>
+
+              {% elif current_user.role == 'manager' %}
+              <!-- Manager仅在非user模型可见非删除操作 -->
+              <div class="flex space-x-1">
+                {% if not no_edit and model_name.lower() != 'users' %}
+                <a href="{{ url_for('generic_crud.edit_view', model_name=route_base, id=item.id) }}"
+                   class="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-full transition-colors has-tooltip edit-btn">
+                  <i class="fa fa-pencil table-field-value"></i>
+                  <span class="tooltip table-field-value">Edit</span>
+                </a>
+                {% endif %}
+              </div>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+
+          <!-- 空状态 -->
+          {% if items|length == 0 %}
+          <tr>
+            <td colspan="{{ visible_fields|length + (1 if (not no_bulk_edit and current_user.role in ['admin', 'manager']) or (not no_bulk_delete and current_user.role == 'admin') else 0) + (1 if showActionColumn else 0) }}" class="px-6 py-12 text-center">
+              <div class="flex flex-col items-center">
+                <div class="w-16 h-16 mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                  <i class="fa fa-server text-gray-400 table-field-value"></i>
+                </div>
+                <h3 class="text-base font-medium text-gray-700 mb-2 table-field-value">No {{ model_name }} data</h3>
+                <p class="text-gray-500 mb-4 table-field-value">Please try adjusting the filter conditions or add new {{ model_name|lower }}</p>
+                {% if not no_add %}
+                <a href="{{ url_for('generic_crud.create_view', model_name=route_base) }}" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 btn-float add-btn table-field-value">
+                  <i class="fa fa-plus mr-1"></i>Add {{ model_name }}
+                </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 分页导航 -->
+    <div class="px-3 py-2 border-t border-gray-200 flex flex-col md:flex-row justify-between items-center">
+      <div class="text-xs text-gray-600 mb-2 md:mb-0 table-field-value">
+        Total {{ pagination_info.total }} {{ model_name }} records, displaying {{ pagination_info.start }}-{{ pagination_info.end }}
+      </div>
+      <div class="flex items-center space-x-0.5">
+        <a href="{{ url_for('generic_crud.list_view', model_name=route_base, page=1,** request.args|omit('page')) }}" class="px-1.5 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors table-field-value">
+          <i class="fa fa-angle-double-left table-field-value"></i>
+        </a>
+        <a href="{{ url_for('generic_crud.list_view', model_name=route_base, page=pagination.prev_num, **request.args|omit('page')) if pagination.has_prev else '#' }}" class="px-1.5 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors table-field-value {% if not pagination.has_prev %}opacity-50 cursor-not-allowed{% endif %}">
+          <i class="fa fa-angle-left table-field-value"></i>
+        </a>
+
+        {% for page_num in pagination.iter_pages(left_edge=2, left_current=2, right_current=3, right_edge=2) %}
+          {% if page_num %}
+            <a href="{{ url_for('generic_crud.list_view', model_name=route_base, page=page_num,** request.args|omit('page')) }}" class="px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors table-field-value {% if page_num == pagination.page %}bg-primary text-white border-primary{% endif %}">
+              {{ page_num }}
+            </a>
+          {% else %}
+            <span class="px-2 py-1 rounded-lg border border-gray-200 text-gray-400 table-field-value">...</span>
+          {% endif %}
+        {% endfor %}
+
+        <a href="{{ url_for('generic_crud.list_view', model_name=route_base, page=pagination.next_num, **request.args|omit('page')) if pagination.has_next else '#' }}" class="px-1.5 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors table-field-value {% if not pagination.has_next %}opacity-50 cursor-not-allowed{% endif %}">
+          <i class="fa fa-angle-right table-field-value"></i>
+        </a>
+        <a href="{{ url_for('generic_crud.list_view', model_name=route_base, page=pagination.pages,** request.args|omit('page')) }}" class="px-1.5 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors table-field-value">
+          <i class="fa fa-angle-double-right table-field-value"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 过滤模态框 -->
+<div id="filter-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md mx-4 transform transition-all duration-300 scale-95 opacity-0" id="modal-content">
+    <div class="p-4 border-b border-gray-100 flex justify-between items-center">
+      <h3 class="text-lg font-bold text-gray-900 table-field-value" id="modal-title">Filter: <span id="current-field" class="table-field-value"></span></h3>
+      <button id="close-filter" class="text-gray-400 hover:text-gray-600 transition-colors">
+        <i class="fa fa-times table-field-value"></i>
+      </button>
+    </div>
+    <div class="p-4">
+      <div class="mb-3">
+        <label class="block text-sm font-medium text-gray-700 mb-1 table-field-value">Search Filter Options</label>
+        <div class="relative">
+          <input type="text" id="filter-search" class="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all table-field-value" placeholder="Enter your search...">
+          <i class="fa fa-search absolute left-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 table-field-value"></i>
+        </div>
+      </div>
+
+      <!-- 全选选项 -->
+      <div class="flex items-center py-2 mb-3 border-b border-gray-100">
+        <input type="checkbox" id="select-all" class="w-3.5 h-3.5 text-primary focus:ring-primary rounded">
+        <label for="select-all" class="ml-2 text-sm font-medium text-gray-700 table-field-value">Select All</label>
+      </div>
+
+      <div class="max-h-80 overflow-y-auto scrollbar-thin" id="filter-options">
+        <!-- 由 JS 填充 -->
+      </div>
+    </div>
+    <div class="p-4 border-t border-gray-100 flex justify-end space-x-2">
+      <button id="clear-filter" class="px-3 py-1.5 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors table-field-value">
+        Clear Filter
+      </button>
+      <button id="apply-filter" class="px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors btn-float table-field-value">
+        Apply Filter
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- 表格设置模态框  -->
+<div id="table-set-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-4xl mx-4 transform transition-all duration-300 scale-95 opacity-0" id="table-set-content">
+    <div class="p-4 border-b border-gray-100 flex justify-between items-center">
+      <h3 class="text-lg font-bold text-gray-900 table-field-value">Table Settings</h3>
+      <button id="close-table-set" class="text-gray-400 hover:text-gray-600 transition-colors">
+        <i class="fa fa-times table-field-value"></i>
+      </button>
+    </div>
+    <div class="p-4">
+      <div class="mb-4">
+        <p class="text-sm text-gray-600 mb-2 table-field-value">Select the columns you want to display and set their order. Drag the columns to change their display order.</p>
+      </div>
+
+      <div class="grid grid-cols-1 gap-4">
+        <!-- 表格配置区域 -->
+        <div class="border border-gray-200 rounded-lg overflow-hidden">
+          <div class="config-table-header flex justify-between items-center">
+            <div class="flex items-center">
+              <h4 class="text-base font-medium text-gray-900 table-field-value">Visible Columns</h4>
+            </div>
+            <div class="flex items-center">
+              <button id="reset-fields" class="text-xs text-primary hover:text-primary/80 mr-2 table-field-value">
+                <i class="fa fa-refresh mr-1 table-field-value"></i>Reset to default
+              </button>
+              <div class="relative">
+                <input type="text" id="column-search" class="pl-8 pr-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all table-field-value" placeholder="Search columns...">
+                <i class="fa fa-search absolute left-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 table-field-value"></i>
+              </div>
+            </div>
+          </div>
+
+          <div id="column-list" class="max-h-96 overflow-y-auto scrollbar-thin">
+            <!-- 由JS填充 -->
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="p-4 border-t border-gray-100 flex justify-end space-x-2">
+      <button id="cancel-table-set" class="px-3 py-1.5 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors table-field-value">
+        Cancel
+      </button>
+      <button id="save-table-set" class="px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors btn-float table-field-value">
+        Save Settings
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 批量编辑模态框 -->
+<div id="bulk-edit-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md mx-4 transform transition-all duration-300 scale-95 opacity-0" id="bulk-edit-content">
+    <div class="p-4 border-b border-gray-100 flex justify-between items-center">
+      <h3 class="text-lg font-bold text-gray-900 table-field-value">Bulk Edit</h3>
+      <button id="close-bulk-edit" class="text-gray-400 hover:text-gray-600 transition-colors">
+        <i class="fa fa-times table-field-value"></i>
+      </button>
+    </div>
+    <div class="p-4">
+      <p class="text-sm text-gray-600 mb-4 table-field-value">Select the fields you want to bulk edit and their new values.</p>
+      <form id="bulk-edit-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" id="bulk-edit-ids" name="ids" value="">
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1 table-field-value">Select Field</label>
+          <select id="bulk-edit-field" name="field" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all table-field-value">
+            <option value="">Please select a field...</option>
+            {% for field in form_fields|default([]) %}
+            {% if field.name not in ['id', 'created_at', 'updated_at'] %}
+            <option value="{{ field.name }}">{{ field.label }}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+
+        <div id="bulk-edit-value-container" class="mb-4 hidden">
+          <!-- 由JS动态填充 -->
+        </div>
+      </form>
+    </div>
+    <div class="p-4 border-t border-gray-100 flex justify-end space-x-2">
+      <button id="cancel-bulk-edit" class="px-3 py-1.5 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors table-field-value">
+        Cancel
+      </button>
+      <button id="apply-bulk-edit" class="px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors btn-float table-field-value">
+        Apply changes
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 导入数据模态框 -->
+<div id="import-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div id="import-content" class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg transform transition-all scale-95 opacity-0">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-semibold table-field-value">Import {{ model_name }} Data</h3>
+            <button id="close-import" class="text-gray-500 hover:text-gray-800">
+              <i class="fa fa-times table-field-value"></i>
+            </button>
+        </div>
+        <div>
+            <div id="import-instructions" class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="font-semibold text-blue-800 table-field-value">Please upload a CSV file. The file must contain the following required columns:</p>
+                <ul id="required-fields-list" class="list-disc list-inside mt-2 text-blue-700 table-field-value">
+                    <!-- 必填字段将由JS动态填充 -->
+                </ul>
+            </div>
+            <div class="file-upload-wrapper">
+                <input type="file" id="import-file-input" accept=".csv" class="hidden">
+                  <button id="custom-upload-btn" class="px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors btn-float table-field-value">
+                    Choose File
+                </button>
+                <span id="file-name" class="ml-2 text-gray-600">No file chosen</span>
+            </div>
+            <div id="import-feedback" class="mt-4 text-sm table-field-value"></div>
+        </div>
+
+        <div class="p-4 border-t border-gray-100 flex justify-end space-x-2">
+            <button id="cancel-import" class="px-3 py-1.5 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors table-field-value">
+                Cancel
+            </button>
+            <button id="confirm-import" class="px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors btn-float table-field-value">
+                Start Import
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block extra_scripts %}
+  <!-- 注入全局变量 -->
+  <script>
+    window.currentModelName = "{{ route_base }}";
+    window.allFields = {{ serializable_field_config|tojson }};
+    window.currentVisibleFields = {{ visible_columns|tojson }};
+    window.defaultColumns = {{ default_columns|tojson }};
+    window.csrfToken = "{{ csrf_token() }}";
+    window.sortBy = "{{ sort_by }}";
+    window.sortOrder = "{{ sort_order }}";
+    window.formFields = {{ form_fields|tojson if form_fields is defined else '[]' }};
+    window.hostInfo = "{{ request.args.get('host_info', '') }}";
+  </script>
+  <script src="{{ url_for('static', filename='js/generic/list.js') }}"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const userRole = "{{ current_user.role if current_user.is_authenticated else '' }}";
+      const currentModel = "{{ model_name.lower() }}";
+
+      // 确保manager看不到批量删除按钮（双重保险）
+      if (userRole === 'manager') {
+        const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+        if (bulkDeleteBtn) bulkDeleteBtn.remove();
+      }
+    });
+  </script>
+
+{% endblock %}
