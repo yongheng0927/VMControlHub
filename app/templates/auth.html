@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block title %}Login / Register - VM ControlHub{% endblock %}
+
+{% block content %}
+<div class="min-h-screen h-screen flex items-center justify-center bg-base-200 overflow-hidden">
+  <div class="max-w-md w-full px-4">
+    <div id="auth-forms" class="bg-white p-6 md:p-8 rounded-2xl card-shadow" data-login-url="{{ url_for('auth.login_post') }}" data-register-url="{{ url_for('auth.register_post') }}" data-change-password-url="{{ url_for('auth.change_password') }}" data-dashboard-url="{{ url_for('dashboard.index') }}">
+      <div class="mb-4 md:mb-6 text-center">
+        <h1 class="text-2xl font-semibold text-neutral">VM ControlHub</h1>
+      </div>
+      <div class="flex justify-center mb-4">
+        <button id="login-tab" class="px-4 py-2 text-sm font-medium text-neutral border-b-2 border-primary">Login</button>
+        <button id="register-tab" class="px-4 py-2 text-sm font-medium text-neutral border-b-2 border-transparent hover:border-primary">Register</button>
+      </div>
+      <div id="message" class="mb-4 text-center text-sm text-danger"></div>
+      
+      <!-- 登录表单 -->
+      <form id="login-form" class="space-y-4" onsubmit="return false;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div>
+          <label for="login-username" class="block text-sm text-neutral/70">Username</label>
+          <input type="text" id="login-username" name="username" required class="w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div>
+          <label for="login-password" class="block text-sm text-neutral/70">Password</label>
+          <input type="password" id="login-password" name="password" required class="w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div>
+          <button type="button" id="login-submit" class="w-full bg-primary text-white py-2 rounded-lg btn-hover">Login</button>
+        </div>
+        <div class="text-center mt-2">
+          <a href="#" id="forgot-password" class="text-sm text-primary hover:underline">Forgot your password?</a>
+        </div>
+      </form>
+      
+      <!-- 注册表单 -->
+      <form id="register-form" class="hidden space-y-4" onsubmit="return false;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div>
+          <label for="reg-username" class="block text-sm text-neutral/70">Username</label>
+          <input type="text" id="reg-username" name="username" required class="w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div>
+          <label for="reg-password" class="block text-sm text-neutral/70">Password</label>
+          <input type="password" id="reg-password" name="password" required class="w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div>
+          <label for="reg-password-confirm" class="block text-sm text-neutral/70">Confirm Password</label>
+          <input type="password" id="reg-password-confirm" name="password_confirm" required class="w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div>
+          <button type="button" id="register-submit" class="w-full bg-primary text-white py-2 rounded-lg btn-hover">Register</button>
+        </div>
+      </form>
+      
+      <!-- 修改密码表单 -->
+      <form id="change-password-form" class="hidden space-y-4" onsubmit="return false;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="mb-3 text-center">
+          <h3 class="text-lg font-medium text-neutral">Change Password</h3>
+          <p class="text-sm text-neutral/70">You must change your password before proceeding</p>
+        </div>
+        <div>
+          <label for="old-password" class="block text-sm text-neutral/70">Current Password</label>
+          <input type="password" id="old-password" name="old_password" required class="w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div>
+          <label for="new-password" class="block text-sm text-neutral/70">New Password</label>
+          <input type="password" id="new-password" name="new_password" required class="w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div>
+          <label for="new-password-confirm" class="block text-sm text-neutral/70">Confirm New Password</label>
+          <input type="password" id="new-password-confirm" name="new_password_confirm" required class="w-full mt-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
+        <div>
+          <button type="button" id="change-password-submit" class="w-full bg-primary text-white py-2 rounded-lg btn-hover">Change Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+{% endblock %}
