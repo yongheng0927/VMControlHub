@@ -1,0 +1,599 @@
+@layer utilities {
+  /* 自定义选择器样式 */
+  .custom-select {
+    @apply relative w-full;
+  }
+  
+  .custom-select select {
+    @apply appearance-none w-full px-3 py-2 pr-8 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-200 text-sm;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236b7280'%3E%3Cpath d='M15.3 9.3a1 1 0 0 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 1.4-1.4l3.3 3.29 3.3-3.3z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1em;
+  }
+  
+  .custom-select select:focus {
+    @apply shadow-md;
+  }
+  
+  .custom-select select:hover {
+    @apply border-gray-400;
+  }
+  
+  .custom-select select:disabled {
+    @apply bg-gray-100 text-gray-400 cursor-not-allowed;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M15.3 9.3a1 1 0 0 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 1.4-1.4l3.3 3.29 3.3-3.3z'/%3E%3C/svg%3E");
+  }
+  
+  .custom-select select:required:invalid {
+    @apply text-gray-500;
+  }
+  
+  .custom-select select option {
+    @apply text-gray-800;
+  }
+  
+  .custom-select .select-icon {
+    @apply absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-gray-500;
+  }
+  
+  .custom-select .select-icon i {
+    @apply transition-transform duration-200;
+  }
+  
+  .custom-select select:focus + .select-icon i {
+    @apply transform rotate-180;
+  }
+  
+  /* 带标签的选择器 */
+  .select-with-label {
+    @apply block mb-1 text-sm font-medium text-gray-700;
+  }
+  
+  /* 错误状态的选择器 */
+  .select-error select {
+    @apply border-red-500 focus:ring-red-500/50 focus:border-red-500;
+  }
+  
+  .select-error .select-icon {
+    @apply text-red-500;
+  }
+  
+  /* 带描述的选择器 */
+  .select-with-description {
+    @apply mt-1 text-xs text-gray-500;
+  }
+  
+  /* 搜索选择器 */
+  .searchable-select {
+    @apply relative;
+  }
+  
+  .searchable-select .search-input {
+    @apply w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-200 text-sm;
+  }
+  
+  .searchable-select .search-icon {
+    @apply absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400;
+  }
+  
+  .searchable-select .dropdown {
+    @apply absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg max-h-60 overflow-y-auto scrollbar-thin border border-gray-200;
+  }
+  
+  .searchable-select .dropdown-item {
+    @apply px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer transition-colors duration-150;
+  }
+  
+  .searchable-select .dropdown-item.selected {
+    @apply bg-primary/10 font-medium;
+  }
+  
+  .searchable-select .dropdown-item.no-results {
+    @apply text-gray-500 cursor-not-allowed;
+  }
+  
+  /* 多选选择器 */
+  .multi-select {
+    @apply relative;
+  }
+  
+  .multi-select .multi-select-input {
+    @apply w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-200 text-sm min-h-[2.25rem] flex items-center flex-wrap gap-1;
+  }
+  
+  .multi-select .multi-select-input:focus {
+    @apply shadow-md;
+  }
+  
+  .multi-select .multi-select-tag {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary;
+  }
+  
+  .multi-select .multi-select-tag-remove {
+    @apply ml-1 text-primary hover:text-primary/80 cursor-pointer;
+  }
+  
+  .multi-select .multi-select-dropdown {
+    @apply absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg max-h-60 overflow-y-auto scrollbar-thin border border-gray-200;
+  }
+  
+  .multi-select .multi-select-option {
+    @apply px-4 py-2 text-sm hover:bg-gray-100 cursor-pointer transition-colors duration-150 flex items-center;
+  }
+  
+  .multi-select .multi-select-option.selected {
+    @apply bg-primary/10 font-medium;
+  }
+  
+  .multi-select .multi-select-option input[type="checkbox"] {
+    @apply mr-2 accent-primary;
+  }
+  
+  /* 状态选择器 */
+  .status-selector {
+    @apply relative;
+  }
+  
+  .status-selector select {
+    @apply appearance-none w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-200 text-sm;
+  }
+  
+  .status-selector .status-icon {
+    @apply absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none w-3 h-3 rounded-full;
+  }
+  
+  .status-selector .status-icon.active {
+    @apply bg-green-500;
+  }
+  
+  .status-selector .status-icon.inactive {
+    @apply bg-gray-400;
+  }
+  
+  .status-selector .status-icon.pending {
+    @apply bg-yellow-500;
+  }
+  
+  .status-selector .status-icon.error {
+    @apply bg-red-500;
+  }
+}
+
+/* 表单样式 */
+.form-input {
+  width: 80%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  outline: none;
+  transition: all 0.2s;
+  font-size: 0.75rem;
+  height: 38px;
+  resize: none;
+  background-color: #f9fafb;
+}
+
+textarea.form-input {
+  height: 38px;
+  min-height: 38px;
+}
+
+.form-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  background-color: #ffffff;
+}
+
+/* 表单输入框悬停效果 */
+.form-input:hover {
+  border-color: #d1d5db;
+}
+
+.form-checkbox {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 0.25rem;
+  border: 1px solid #d1d5db;
+  accent-color: #3b82f6;
+}
+
+/* 字段标签样式 */
+.field-description {
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  color: #6b7280;
+}
+
+.field-error {
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  color: #ef4444;
+}
+
+.required-mark {
+  color: #ef4444;
+  margin-left: 0.25rem;
+}
+
+/* 表格行悬停效果 */
+tr:hover .field-description {
+  color: #4b5563;
+}
+
+/* 按钮悬浮效果 */
+.btn-float {
+  transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.btn-float:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* 滚动条样式 */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* 超紧凑表格 */
+.ultra-compact-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* 通知提示样式 */
+.notification {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  background: white;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  z-index: 100;
+  max-width: 24rem;
+  transform: translateX(120%);
+  transition: transform 0.3s ease-out;
+}
+
+.notification.show {
+  transform: translateX(0);
+}
+
+.notification-content {
+  display: flex;
+  align-items: center;
+}
+
+.notification-content i {
+  margin-right: 0.5rem;
+  font-size: 1rem;
+}
+
+.notification-success {
+  border-left: 4px solid #10b981;
+}
+
+.notification-success i {
+  color: #10b981;
+}
+
+.notification-error {
+  border-left: 4px solid #ef4444;
+}
+
+.notification-error i {
+  color: #ef4444;
+}
+
+.notification-info {
+  border-left: 4px solid #3b82f6;
+}
+
+.notification-info i {
+  color: #3b82f6;
+}
+
+/* 表单卡片阴影效果 */
+.shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* 自定义复选框样式 */
+.checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+/* 表格行动画 */
+.table-row-animate {
+  transition: background-color 0.2s;
+}
+
+/* 工具提示 */
+.has-tooltip {
+  position: relative;
+}
+
+.tooltip {
+  visibility: hidden;
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #333;
+  color: white;
+  text-align: center;
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 10;
+}
+
+.has-tooltip:hover .tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* 输入框包装器 */
+.field-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.field-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+
+.input-group {
+  position: relative;
+  width: 80%;
+}
+
+.input-group input,
+.input-group textarea,
+.input-group select {
+  padding-right: 2.5rem;
+  width: 100%;
+}
+
+.select-wrapper {
+  position: relative;
+  width: 80%;
+}
+
+.select-wrapper select {
+  padding-right: 2rem;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: none;
+  height: 38px;
+  width: 100%;
+  background-color: #f9fafb;
+}
+
+.select-wrapper .field-icon {
+  right: 10px;
+  pointer-events: none;
+}
+
+/* 输入框获得焦点时图标颜色变化 */
+.field-wrapper:focus-within .field-icon {
+  color: var(--color-primary);
+}
+
+/* 表单行交替颜色 */
+.form-table tr:nth-child(even) {
+  background-color: rgba(249, 250, 251, 0.5);
+}
+
+/* 表单字段焦点效果 */
+.form-table tr:focus-within {
+  background-color: rgba(243, 244, 246, 0.8);
+}
+
+/* 表单行动画效果 */
+.form-table tr {
+  transition: background-color 0.2s;
+}
+
+/* 保存按钮样式 */
+.save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  background-color: #3b82f6;
+  color: white;
+  border-radius: 0.375rem;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.save-btn:hover {
+  background-color: #2563eb;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.save-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.save-btn i {
+  font-size: 1rem;
+}
+
+/* 表单提交按钮加载状态 */
+.btn-loading {
+  position: relative;
+  color: transparent !important;
+}
+
+.btn-loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-top-color: white;
+  animation: spin 0.8s infinite linear;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 表单表格样式 */
+.form-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.form-table td {
+  padding: 0.75rem 1rem;
+  vertical-align: top;
+}
+
+/* 表单标签列样式 */
+.form-table td:first-child {
+  width: 25%;
+  background-color: #f3f4f6;
+  border-right: 1px solid #e5e7eb;
+  font-weight: 500;
+}
+
+/* 清除按钮样式 */
+.clear-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: none; /* 默认隐藏 */
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+.clear-btn:hover {
+  color: #ef4444;
+  background-color: #f3f4f6;
+}
+
+/* 底部保存按钮 */
+.form-btn-primary,
+.form-btn-secondary {
+  padding: 0.5rem 1rem; /* 8px 16px */
+  border-radius: 0.5rem; /* 8px */
+  font-size: 0.875rem; /* 14px */
+  font-weight: 500;
+  transition: all 0.2s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none; /* for <a> tags */
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.form-btn-primary {
+  background-color: #165DFF; /* primary */
+  color: white;
+}
+
+.form-btn-primary:hover {
+  background-color: #0045e0; /* a bit darker primary */
+}
+
+.form-btn-secondary {
+  background-color: #4b5563; /* gray-600 */
+  color: white;
+}
+
+.form-btn-secondary:hover {
+  background-color: #374151; /* gray-700 */
+}
+
+/* 聚焦时显示清除按钮 */
+.input-group:focus-within .clear-btn {
+  display: block;
+}
+
+/* 通知动画 */
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-fade-in-down {
+  animation: fadeInDown 0.3s ease-out forwards;
+}
+/* 修改表单卡片容器，移除overflow-hidden以允许下拉菜单正常显示 */
+.bg-white.rounded-xl.shadow-md.transition-all.duration-300.hover\:shadow-lg {
+  overflow: visible; /* 改为visible以允许下拉菜单超出容器显示 */
+}
+
+/* 调整选择器容器样式 */
+.select-wrapper {
+  position: relative;
+  width: 80%; /* 增加宽度以提供更多显示空间 */
+  overflow: visible; /* 确保下拉菜单不会被裁剪 */
+}
+
+/* 确保Choices.js下拉菜单能够正确显示 */
+.choices__list--dropdown,
+.choices__list[aria-expanded] {
+  z-index: 9999; /* 确保下拉菜单在最上层 */
+  overflow: visible;
+}

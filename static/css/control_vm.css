@@ -1,0 +1,84 @@
+.status-badge-sm {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25em 0.6em;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.status-badge-green { background-color: #DEF7EC; color: #03543F; }
+.status-badge-red { background-color: #FDE2E1; color: #8C1D18; }
+.status-badge-gray { background-color: #F3F4F6; color: #4B5563; }
+.status-badge-yellow { background-color: #FEF3C7; color: #92400E; }
+.status-badge-blue { background-color: #DBEAFE; color: #1E40AF; }
+
+.vm-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.vm-btn.start { background-color: #10B981; color: white; }
+.vm-btn.start:not(.disabled):hover { background-color: #059669; }
+.vm-btn.shutdown { background-color: #EF4444; color: white; }
+.vm-btn.shutdown:not(.disabled):hover { background-color: #DC2626; }
+.vm-btn.reboot { background-color: #F59E0B; color: white; }
+.vm-btn.reboot:not(.disabled):hover { background-color: #D97706; }
+
+.vm-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.error-message {
+  color: #DC2626;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+/* 表格样式 - 与其他页面统一 */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: white;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.data-table th {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.data-table td {
+  border-bottom: 1px solid #e9ecef;
+  padding: 0.75rem 1rem;
+  transition: background-color 0.2s;
+}
+
+.data-table tr:hover td {
+  background-color: #f8f9fa;
+}
+
+/* 列宽度设置 */
+.col-ip, .col-cpu, .col-memory, .col-disk, 
+.col-os, .col-user, .col-host, .col-status {
+  min-width: 120px;
+}
+
+.col-ip { width: 15%; }
+.col-status { width: 15%; }

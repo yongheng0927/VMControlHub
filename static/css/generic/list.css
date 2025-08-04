@@ -1,0 +1,203 @@
+@layer utilities {
+  .filter-active {
+    @apply bg-blue-50 text-blue-700;
+  }
+  .table-row-animate {
+    @apply transition-all duration-300;
+  }
+  .btn-float {
+    @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-1;
+  }
+  .hover-scale {
+    @apply transition-transform duration-200 hover:scale-105;
+  }
+  .status-badge {
+    @apply px-2 py-1 rounded-full text-xs font-medium inline-flex items-center;
+  }
+  .tooltip {
+    @apply invisible absolute bg-black text-white text-xs rounded px-2 py-1 -mt-8 opacity-0 transition-opacity duration-200 z-50;
+  }
+  .has-tooltip:hover .tooltip {
+    @apply visible opacity-100;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+  }
+  .field-item {
+    @apply flex items-center justify-between p-2 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors;
+  }
+  .field-item-selected {
+    @apply bg-blue-50 text-blue-700;
+  }
+  
+  
+/* 统一字段值字体样式（替换所有字段值的字体大小） */
+.table-field-value {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  font-size: 0.85rem !important; /* 核心：统一字体大小（可根据需要调整为 0.65rem 等） */
+  font-weight: 400;
+  line-height: 1.2; /* 确保文字紧凑且不重叠 */
+}
+
+/* 强制覆盖可能的冲突样式（如 Tailwind 的 text-xs） */
+.table-field-value.text-xs,
+.table-field-value.text-sm {
+  font-size: 0.7rem !important;
+}
+
+  /* 表格样式 */
+  .ultra-compact-table th, .ultra-compact-table td {
+    padding: 0.25rem 0.35rem !important; /* 单元格内边距 */
+    font-size: 0.7rem !important; /* 字体大小 */
+  }
+  .ultra-compact-table th {
+    font-size: 0.75rem !important; /* 表头字体大小 */
+    font-weight: 500 !important;
+  }
+  .ultra-compact-table .fa {
+    font-size: 0.75rem !important; /* 图标大小 */
+  }
+  .ultra-compact-table .status-badge {
+    padding: 0.1rem 0.35rem !important; /* 状态标签 */
+    font-size: 0.65rem !important;
+  }
+  .ultra-compact-table .btn-float {
+    padding: 0.15rem 0.35rem !important; /* 按钮*/
+    font-size: 0.75rem !important;
+  }
+} 
+  
+  /* 表格设置样式  */
+  .config-table-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    padding: 0.75rem 1rem;
+  }
+  .config-table-item {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid #e9ecef;
+    transition: background-color 0.2s;
+  }
+  .config-table-item:hover {
+    background-color: #f8f9fa;
+  }
+  .config-table-item.selected {
+    background-color: #e8f4fe;
+  }
+  
+  /* 排序图标样式 */
+  .sort-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+  }
+  th:hover .sort-icon {
+    opacity: 1;
+  }
+  .sort-active {
+    opacity: 1;
+    color: #165DFF;
+  }
+  
+  /* 批量操作工具栏 */
+  .bulk-actions-bar {
+    display: none;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    padding: 0.5rem 1rem;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .bulk-actions-bar.visible {
+    display: flex;
+  }
+
+/* 通用徽章样式 - 统一大小和布局 */
+.green-badge, .gray-badge, .red-badge, .blue-badge {
+  display: inline-block;
+  width: 60px;
+  padding: 0.1rem 0;
+  text-align: center;
+  border-radius: 5px; /* 圆角更柔和，数值越小越接近直角 */
+  font-size: 0.725rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  
+ 
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* 各颜色徽章徽章样式 */
+.green-badge {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.gray-badge {
+  background-color: #b5bbbdd7;
+  color: rgb(8, 1, 1);
+}
+
+.red-badge {
+  background-color: #ce2f2f;
+  color: white;
+}
+
+.blue-badge {
+  background-color: #165DFF;
+  color: white;
+}
+
+
+/* 针对manager角色在users模型下操作列的占位样式 */
+.manager-users-actions-placeholder td:last-child:empty::before {
+  content: "";
+  display: inline-block;
+  width: 80px; /* 根据实际按钮宽度调整 */
+  height: 24px; /* 根据实际按钮高度调整 */
+  background-color: transparent; /* 透明背景，也可设置浅灰色等模拟按钮底色 */
+  border-radius: 4px; /* 根据实际按钮圆角调整 */
+  margin-right: 5px; /* 根据实际按钮间距调整 */
+  vertical-align: middle; /* 垂直居中 */
+}
+
+/* 表格容器使用 flex 布局，确保分页始终在底部 */
+.table-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 300px; /* 最小高度，避免内容过少时容器过矮 */
+}
+
+/* 滚动区域填充剩余空间，确保分页固定在底部 */
+.table-scroll-area {
+  flex: 1; /* 占满容器剩余空间 */
+  overflow: auto; /* 保留滚动功能 */
+}
+
+/* 修复分页区域与容器边框的衔接 */
+.pagination-bar {
+  border-top: 1px solid #e5e7eb !important; /* 强制显示顶部边框 */
+  margin-top: auto; /* 推到容器底部 */
+}
