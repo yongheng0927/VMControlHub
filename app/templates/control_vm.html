@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+
+{% block title %}Control - VM Control Hub{% endblock %}
+
+{% block header_title %}Control{% endblock %}
+
+{% block extra_head %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/generic_form.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/control_vm.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="container mx-auto px-4 py-6">
+  <!-- 数据属性存储区 - 用于JS获取URL和CSRF令牌 -->
+  <div id="control-vm-data" 
+       data-get-status-url="{{ url_for('control_vm.get_status') }}"
+       data-power-control-url="{{ url_for('control_vm.power_control') }}"
+       data-csrf-token="{{ csrf_token() }}">
+  </div>
+
+  <!-- 查询卡片 - 与其他页面卡片风格统一 -->
+  <div class="bg-white rounded-xl shadow-md overflow-hidden mb-6 transition-all duration-300 hover:shadow-lg">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+      <h2 class="text-lg font-semibold text-gray-800 flex items-center">
+        <i class="fa fa-search mr-2 text-primary"></i>Query VM Info
+      </h2>
+    </div>
+    <div class="px-6 py-5">
+      <form method="GET" action="{{ url_for('control_vm.index') }}" class="space-y-4" id="vm-search-form">
+        <div class="relative max-w-lg mx-auto">
+          <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+            <i class="fa fa-desktop text-gray-400"></i>
+          </div>
+          <input 
+            type="text" 
+            name="ip" 
+            id="ip-input"
+            placeholder="Enter the IP address of the virtual machine you want to query" 
+            required 
+            value="{{ ip or '' }}"
+            class="w-full pl-12 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all outline-none text-sm"
+          >
+        </div>
+        
+        <div class="max-w-lg mx-auto">
+          <button 
+            type="submit" 
+            class="w-full bg-primary hover:bg-primary/90 text-white font-medium py-2 px-4 rounded-lg focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all outline-none text-sm flex items-center justify-center btn-float"
+          >
+            <i class="fa fa-search mr-2"></i> Query
+          </button>
+          <div id="ip-error-message" class="error-message hidden">Please enter a valid IPv4 address</div>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- 错误/信息提示 - 与其他页面提示风格统一 -->
+  {% if error %}
+  <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 max-w-lg mx-auto flex items-start">
+    <i class="fa fa-exclamation-circle mr-3 text-lg mt-0.5"></i>
+    <span>{{ error }}</span>
+  </div>
+  {% endif %}
+  
+  {% if info_message %}
+  <div class="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg mb-6 max-w-lg mx-auto flex items-start">
+    <i class="fa fa-info-circle mr-3 text-lg mt-0.5"></i>
+    <span>{{ info_message }}</span>
+  </div>
+  {% endif %}
+
+  <!-- 状态显示 -->
+  {% if ip and results %}
+  <div class="flex justify-center mt-2 mb-6">
+    <div id="vm-status-container" class="flex justify-center">
+      <span id="vm-status" class="inline-block px-5 py-2 rounded-full text-base font-medium bg-yellow-100 text-yellow-800">
+        <i class="fa fa-spinner fa-spin mr-2"></i>Loading
+      </span>
+    </div>
+  </div>
+  {% endif %}
+  
+  <!-- 查询结果 -->
+  {% if ip and results %}
+  <div id="result-card" class="bg-white rounded-xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg">
+    <div class="px-6 py-5">
+      <!-- 信息表格 - 使用标准表格结构 -->
+      <div class="overflow-x-auto mb-6">
+        <table class="data-table">
+          <!-- 表头 -->
+          <thead>
+            <tr>
+              <th class="col-ip">IP Address</th>
+              <th class="col-cpu">CPUS</th>
+              <th class="col-memory">Memory (GB)</th>
+              <th class="col-disk">Disk (GB)</th>
+              <th class="col-os">OS</th>
+              <th class="col-user">User</th>
+              <th class="col-host">Host</th> 
+            </tr>
+          </thead>
+          
+          <!-- 表内容 -->
+          <tbody>
+            {% for vm in results %}
+            <tr>
+              <td class="col-ip">{{ vm.vm_ip }}</td>
+              <td class="col-cpu">{{ vm.cpus or '-' }}</td>
+              <td class="col-memory">{{ vm.memory_gb or '-' }}</td>
+              <td class="col-disk">{{ vm.disk_gb or '-' }}</td>
+              <td class="col-os">{{ vm.os_type }}</td>
+              <td class="col-user">{{ vm.vm_user }}</td>
+              <td class="col-host">
+                {% if vm.host %}
+                  {{ vm.host.host_info }}
+                {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 操作按钮 -->
+      <div class="flex flex-wrap justify-center gap-3 pt-4 border-t border-gray-100">
+        <button class="vm-btn start disabled" data-action="start">
+          <i class="fa fa-play mr-2"></i> Start
+        </button>
+        <button class="vm-btn shutdown disabled" data-action="shutdown">
+          <i class="fa fa-power-off mr-2"></i> Shutdwon
+        </button>
+        <button class="vm-btn reboot disabled" data-action="reboot">
+          <i class="fa fa-refresh mr-2"></i> Reboot
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/control_vm.js') }}"></script>
+{% endblock %}
