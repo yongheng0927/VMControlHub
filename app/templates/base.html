@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}VM Control Hub{% endblock %}</title>
+
+    <!-- 引入 Tailwind CSS -->
+    <script src="{{ url_for('static', filename='vendor/tailwindcss.js') }}"></script>
+    <!-- 引入 Font Awesome 图标库 -->
+    <link href="{{ url_for('static', filename='vendor/font-awesome.min.css') }}" rel="stylesheet">
+    <!-- 引入 Font Awesome CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/font-awesome.css') }}"/>
+    <!-- 自定义 CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+
+    <!-- Tailwind 主题配置 -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: '#165DFF',
+              success: '#36D399',
+              danger: '#F87272',
+              warning: '#FBBD23',
+              neutral: '#3D4451',
+              'neutral-content': '#F2F7FF',
+              'base-100': '#FFFFFF',
+              'base-200': '#F9FAFB',
+              'base-300': '#F3F4F6'
+            },
+            fontFamily: {
+              inter: ['Inter', 'system-ui', 'sans-serif'],
+            },
+          }
+        }
+      }
+    </script>
+
+    <!-- CSRF Token -->
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-base-200 font-inter text-neutral min-h-screen flex flex-col overflow-hidden">
+  {% if current_user.is_authenticated %}
+  <!-- Header -->
+  <header class="bg-white shadow-sm sticky top-0 z-10">
+    <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <i class="fa fa-server text-primary text-2xl"></i>
+        <h1 class="text-xl font-semibold text-neutral">{% block header_title %}VM Control Hub{% endblock %}</h1>
+      </div>
+      <div class="flex items-center space-x-4">
+        <div class="relative">
+          <button id="user-menu-button" class="flex items-center space-x-2 focus:outline-none">
+            <div class="h-8 w-8 rounded-full bg-base-300 flex items-center justify-center">
+              <i class="fa fa-user text-neutral/50"></i>
+            </div>
+            <span class="text-sm font-medium">{{ current_user.username }}</span>
+            <i class="fa fa-chevron-down text-xs text-neutral"></i>
+          </button>
+          <div id="user-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-2 z-20 border border-gray-100">
+            <a href="{{ url_for('auth.logout_route') }}" class="block px-4 py-2 text-sm text-danger hover:bg-gray-100">
+              <i class="fa fa-sign-out-alt mr-2"></i>Logout
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+  {% endif %}
+
+  <div class="flex flex-1 overflow-hidden">
+    {% if current_user.is_authenticated %}
+    <!-- 桌面端侧边栏 -->
+    <aside class="bg-base-200 w-52 border-r border-gray-200 shadow-sm h-full">
+      <nav class="py-0 h-full flex flex-col scrollbar-thin">
+        <div class="sidebar-header">VM Control Hub</div>
+        <div class="flex-1 overflow-y-auto">
+          <ul class="space-y-1 px-2">
+            <!-- Dashboard -->
+            <div class="parent-menu-container">
+              <li>
+                <a href="{{ url_for('dashboard.index') }}" class="sidebar-item {% if active_page=='dashboard' %}sidebar-item-active{% endif %}">
+                  <div class="sidebar-icon {% if active_page=='dashboard' %}sidebar-icon-active{% endif %}"><i class="fa fa-tachometer"></i></div>
+                  <span class="sidebar-text">Dashboard</span>
+                </a>
+              </li>
+            </div>
+            
+            <!-- Control -->
+            <div class="parent-menu-container">
+              <li>
+                <a href="{{ url_for('control_vm.index') }}" class="sidebar-item {% if active_page=='control' %}sidebar-item-active{% endif %}">
+                  <div class="sidebar-icon {% if active_page=='control' %}sidebar-icon-active{% endif %}"><i class="fa fa-power-off"></i></div>
+                  <span class="sidebar-text">Control</span>
+                </a>
+              </li>
+            </div>
+            
+            <!-- Data Submenu -->
+            {% if current_user.role in ['admin', 'manager'] %}
+            <div class="parent-menu-container">
+              <li>
+                <button id="btn-data-submenu" type="button"
+                        class="w-full flex items-center justify-between sidebar-item {% if active_page=='data' %}sidebar-item-active{% endif %}">
+                  <div class="flex items-center">
+                    <div class="sidebar-icon {% if active_page=='data' %}sidebar-icon-active{% endif %}"><i class="fa fa-database"></i></div>
+                    <span class="sidebar-text">Data</span>
+                  </div>
+                  <i id="icon-data-submenu" class="fa fa-chevron-down text-xs text-neutral transition-transform duration-300 {% if data_open %}transform rotate-180{% endif %}"></i>
+                </button>
+                <ul id="data-submenu" class="mt-1 submenu-transition {% if data_open %}open{% endif %}">
+                  <li><a href="{{ url_for('generic_crud.list_view', model_name='hosts') }}"
+                         class="sidebar-subitem {% if active_page=='hosts' %}sidebar-subitem-active{% endif %}" onclick="setPageTitle('Hosts')">Hosts</a></li>
+                  <li><a href="{{ url_for('generic_crud.list_view', model_name='vms') }}"
+                         class="sidebar-subitem {% if active_page=='vms' %}sidebar-subitem-active{% endif %}" onclick="setPageTitle('VMs')">VMs</a></li>
+                </ul>
+              </li>
+            </div>
+            {% endif %}
+            
+            <!-- Logs Submenu -->
+            {% if current_user.role in ['admin', 'manager'] %}
+            <div class="parent-menu-container">
+              <li>
+                <button id="btn-logs-submenu" type="button"
+                        class="w-full flex items-center justify-between sidebar-item {% if active_page=='logs' %}sidebar-item-active{% endif %}">
+                  <div class="flex items-center">
+                    <div class="sidebar-icon {% if active_page=='logs' %}sidebar-icon-active{% endif %}"><i class="fa fa-list-alt"></i></div>
+                    <span class="sidebar-text">Logs</span>
+                  </div>
+                  <i id="icon-logs-submenu" class="fa fa-chevron-down text-xs text-neutral transition-transform duration-300 {% if logs_open %}transform rotate-180{% endif %}"></i>
+                </button>
+                <ul id="logs-submenu" class="mt-1 submenu-transition {% if logs_open %}open{% endif %}">
+                  <li><a href="{{ url_for('generic_crud.list_view', model_name='change_logs') }}" 
+                    class="sidebar-subitem {% if active_page=='change_logs' %}sidebar-subitem-active{% endif %}" onclick="setPageTitle('Change')">Change</a></li>
+                  <li><a href="{{ url_for('generic_crud.list_view', model_name='operation_logs') }}" class="sidebar-subitem {% if active_page=='operation_logs' %}sidebar-subitem-active{% endif %}" onclick="setPageTitle('Operation')">Operation</a></li>
+                </ul>
+              </li>
+            </div>
+            {% endif %}
+            
+            <!-- Admin Submenu -->
+            {% if current_user.role in ['admin', 'manager'] %}
+            <div class="parent-menu-container">
+              <li>
+                <button id="btn-admin-submenu" type="button"
+                        class="w-full flex items-center justify-between sidebar-item {% if active_page=='admin' %}sidebar-item-active{% endif %}">
+                  <div class="flex items-center">
+                    <div class="sidebar-icon {% if active_page=='admin' %}sidebar-icon-active{% endif %}"><i class="fa fa-users"></i></div>
+                    <span class="sidebar-text">Admin</span>
+                  </div>
+                  <i id="icon-admin-submenu" class="fa fa-chevron-down text-xs text-neutral transition-transform duration-300 {% if admin_open %}transform rotate-180{% endif %}"></i>
+                </button>
+                <ul id="admin-submenu" class="mt-1 submenu-transition {% if admin_open %}open{% endif %}">
+                  <li><a href="{{ url_for('generic_crud.list_view', model_name='users') }}"
+                         class="sidebar-subitem {% if active_page=='users' %}sidebar-subitem-active{% endif %}" onclick="setPageTitle('User')">User</a></li>
+                </ul>
+              </li>
+            </div>
+            {% endif %}
+          </ul>
+        </div>
+      </nav>
+    </aside>
+    {% endif %}
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto bg-base-200 {% if current_user.is_authenticated %}p-4{% else %}p-8{% endif %}">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="fixed bottom-4 right-4 space-y-2 z-50">
+        {% for category, message in messages %}
+        <div class="px-4 py-2 rounded shadow card-shadow bg-white border-l-4 {% if category=='success' %}border-green-500{% elif category in ['error','danger'] %}border-red-500{% else %}border-blue-500{% endif %}">
+          {{ message }}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  {% block extra_modals %}{% endblock %}
+
+  <!-- 全局脚本 -->
+  <script src="{{ url_for('static', filename='js/base.js') }}"></script>
+  <!-- 引入 Choices.js -->
+  <script src="{{ url_for('static', filename='vendor/choices.min.js') }}"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>
