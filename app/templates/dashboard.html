@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - VM Control Hub{% endblock %}
+
+{% block header_title %}Dashboard{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/generic/list.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  {% if current_user.role in ['admin','manager'] %}
+    <div class="grid grid-cols-2 gap-4">
+      <!-- 主机统计部分 -->
+      <div class="bg-white p-0 rounded-xl shadow-sm">
+        <div class="p-3">
+          <div class="flex justify-between items-center">
+            <h2 class="text-base font-semibold text-neutral flex items-center">
+              <i class="fa fa-server mr-2 text-primary"></i>Host Statistics
+            </h2>
+          </div>
+        </div>
+        <div class="p-3 grid grid-cols-3 gap-3">
+          <!-- 总主机 -->
+          <a href="{{ url_for('generic_crud.list_view', model_name='hosts') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-neutral font-medium">Total Hosts</p>
+                <p class="text-xl font-bold text-neutral mt-0.5">{{ total_hosts }}</p>
+              </div>
+              <div class="p-2 bg-primary/10 rounded-full">
+                <i class="fa fa-server text-primary text-lg"></i>
+              </div>
+            </div>
+          </a>
+
+          <!-- 活跃主机 -->
+          <a href="{{ url_for('generic_crud.list_view', model_name='hosts', status='active') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-neutral font-medium">Active Hosts</p>
+                <p class="text-xl font-bold text-green-600 mt-0.5">{{ active_hosts }}</p>
+              </div>
+              <div class="p-2 bg-green-100 rounded-full">
+                <i class="fa fa-check-circle text-green-600 text-lg"></i>
+              </div>
+            </div>
+          </a>
+          
+          <!-- 非活跃主机 -->
+          <a href="{{ url_for('generic_crud.list_view', model_name='hosts', status='inactive') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-neutral font-medium">Inactive Hosts</p>
+                <p class="text-xl font-bold text-red-600 mt-0.5">{{ inactive_hosts }}</p>
+              </div>
+              <div class="p-2 bg-red-100 rounded-full">
+                <i class="fa fa-times-circle text-red-600 text-lg"></i>
+              </div>
+            </div>
+          </a>
+        </div>
+      </div>
+      
+      <!-- 虚拟机统计部分 -->
+      <div class="bg-white p-0 rounded-xl shadow-sm">
+        <div class="p-3">
+          <div class="flex justify-between items-center">
+            <h2 class="text-base font-semibold text-neutral flex items-center">
+              <i class="fa fa-cubes mr-2 text-primary"></i>VM Statistics
+            </h2>
+          </div>
+        </div>
+        <div class="p-3 grid grid-cols-3 gap-3">
+          <!-- 总虚拟机 -->
+          <a href="{{ url_for('generic_crud.list_view', model_name='vms') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-neutral font-medium">Total VMs</p>
+                <p class="text-xl font-bold text-neutral mt-0.5">{{ total_vms }}</p>
+              </div>
+              <div class="p-2 bg-primary/10 rounded-full">
+                <i class="fa fa-cubes text-primary text-lg"></i>
+              </div>
+            </div>
+          </a>
+          
+          <!-- 活跃虚拟机 -->
+          <a href="{{ url_for('generic_crud.list_view', model_name='vms', status='active') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-neutral font-medium">Active VMs</p>
+                <p class="text-xl font-bold text-green-600 mt-0.5">{{ active_vms }}</p>
+              </div>
+              <div class="p-2 bg-green-100 rounded-full">
+                <i class="fa fa-check-circle text-green-600 text-lg"></i>
+              </div>
+            </div>
+          </a>
+          
+          <!-- 非活跃虚拟机 -->
+          <a href="{{ url_for('generic_crud.list_view', model_name='vms', status='inactive') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-xs text-neutral font-medium">Inactive VMs</p>
+                <p class="text-xl font-bold text-red-600 mt-0.5">{{ inactive_vms }}</p>
+              </div>
+              <div class="p-2 bg-red-100 rounded-full">
+                <i class="fa fa-times-circle text-red-600 text-lg"></i>
+              </div>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 最近操作记录 -->
+    <div class="bg-white p-4 rounded-xl shadow-md">
+      <h2 class="text-lg font-medium text-neutral mb-4">Recent Operations</h2>
+      <div class="overflow-x-auto overflow-y-auto" style="max-height: 400px;">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-base-200 sticky top-0 z-10">
+            <tr>
+              <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">Time</th>
+              <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">Username</th>
+              <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">VM IP</th>
+              <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">Operation</th>
+              <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">Status</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-100">
+            {% for op in recent_operations %}
+            <tr class="hover:bg-gray-50 transition-colors duration-200">
+              <td class="px-4 py-2 text-sm text-neutral">{{ op.time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+              <td class="px-4 py-2 text-sm text-neutral">{{ op.username }}</td>
+              <td class="px-4 py-2 text-sm text-neutral">{{ op.vm_ip }}</td>
+              <td class="px-4 py-2 text-sm">
+                {% if op.operation_type == 'start' %}
+                <span class="green-badge">Start</span>
+                {% elif op.operation_type == 'shutdown' %}
+                <span class="red-badge">Shutdown</span>
+                {% elif op.operation_type == 'reboot' %}
+                <span class="blue-badge">Reboot</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2 text-sm">
+                {% if op.status == 'success' %}
+                <span class="green-badge">Success</span>
+                {% else %}
+                <span class="red-badge">Failed</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="px-4 py-2 text-center text-sm text-neutral/70">No records found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% elif current_user.role == 'operator' %}
+  <!-- Operator视图（已修复徽章显示问题） -->
+  <div class="bg-white p-4 rounded-xl shadow-md">
+    <h2 class="text-lg font-medium text-neutral mb-4">My most recent actions</h2>
+    <div class="overflow-x-auto overflow-y-auto" style="max-height: 400px;">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-base-200 sticky top-0 z-10">
+          <tr>
+            <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">Time</th>
+            <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">VM IP</th>
+            <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">Operation</th>
+            <th class="px-4 py-2 text-left text-sm font-medium text-neutral/70">Status</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-100">
+          {% for op in personal_operations %}
+          <tr class="hover:bg-gray-50 transition-colors duration-200">
+            <td class="px-4 py-2 text-sm text-neutral">{{ op.time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td class="px-4 py-2 text-sm text-neutral">
+              <a href="{{ url_for('control_vm.index', ip=op.vm_ip) }}" 
+                 class="text-blue-600 hover:text-blue-800 hover:underline">
+                {{ op.vm_ip }}
+              </a>
+            </td>
+            <!-- 操作类型徽章 -->
+            <td class="px-4 py-2 text-sm">
+              {% if op.operation_type == 'start' %}
+                <span class="green-badge">Start</span>
+              {% elif op.operation_type == 'shutdown' %}
+                <span class="red-badge">Shutdown</span>
+              {% elif op.operation_type == 'reboot' %}
+                <span class="blue-badge">Reboot</span>
+              {% endif %}
+            </td>
+            <!-- 状态徽章 -->
+            <td class="px-4 py-2 text-sm">
+              {% if op.status == 'success' %}
+                <span class="green-badge">Success</span>
+              {% else %}
+                <span class="red-badge">Failed</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="px-4 py-2 text-center text-sm text-neutral/70">No operations found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
