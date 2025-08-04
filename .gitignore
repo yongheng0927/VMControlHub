@@ -1,0 +1,7 @@
+# app/.gitignore
+
+app/__pycache__
+app/routes/__pycache__
+app/services/__pycache__
+app/routes/data/__pycache__
+venv/
