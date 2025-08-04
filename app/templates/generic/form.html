@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ 'Edit' if item else 'Create' }} {{ model_name }} | VM Management{% endblock %}
+
+{% block header_title %}{{ 'Edit' if item else 'Create' }} {{ model_name }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/generic/form.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/choices.min.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto">
+  <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-2">
+    <div class="flex items-center space-x-2 text-sm text-gray-600">
+      <a href="{{ url_for('generic_crud.list_view', model_name=route_base) }}"
+         class="hover:text-primary transition-colors flex items-center">
+        <i class="fa fa-list-ul mr-1"></i>
+        {{ model_name }}
+      </a>
+      <i class="fa fa-chevron-right text-xs"></i>
+      <span class="text-neutral">{{ 'Edit' if item else 'Create' }} {{ model_name }}</span>
+    </div>
+  </div>
+
+  <!-- 表单卡片 -->
+  <div class="bg-white rounded-xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg">
+    <!-- 表单头部 -->
+    <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+      <div class="flex justify-between items-center">
+        <h2 class="text-base font-medium text-neutral flex items-center">
+          <i class="fa fa-{{ 'pencil' if item else 'plus-circle' }} mr-2 text-primary"></i>
+          {{ 'Edit' if item else 'Create' }} {{ model_name }}
+        </h2>
+        <div class="text-xs text-gray-500">
+          <i class="fa fa-info-circle mr-1"></i>
+          <span>Fields marked with <span class="text-red-500">*</span> are mandatory</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 表单内容区域 -->
+    <div class="p-0">
+      <form id="edit-form" method="POST" action="{% if item %}{{ url_for('generic_crud.edit_view', model_name=route_base, id=item.id) }}{% else %}{{ url_for('generic_crud.create_view', model_name=route_base) }}{% endif %}">
+        <!-- 添加CSRF令牌 -->
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <table class="w-full border-collapse form-table">
+          <tbody>
+            {% for field in form_fields %}
+            {% if field.name not in ['id', 'created_at', 'updated_at'] %}
+            <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+              <!-- 标签区 -->
+              <td class="px-4 py-3 w-1/4 bg-gray-50 border-r border-gray-100">
+                <label for="{{ field.name }}" class="block text-sm font-medium text-neutral">
+                  {{ field.label }}
+                  {% if field.required %}<span class="required-mark">*</span>{% endif %}
+                </label>
+                {% if field.description %}
+                <p class="field-description">{{ field.description }}</p>
+                {% endif %}
+              </td>
+
+              <!-- 输入区 -->
+              <td class="px-4 py-3">
+                <div class="field-wrapper">
+                  {% if field.type == 'text' %}
+                    <div class="input-group">
+                      <input type="text" id="{{ field.name }}" name="{{ field.name }}"
+                             value="{{ data.get(field.name, '') }}" class="form-input text-xs"
+                             {% if field.required %}required{% endif %}
+                             {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+                      {% if data.get(field.name) %}
+                      <button type="button" class="clear-btn" data-target="{{ field.name }}">
+                        <i class="fa fa-times"></i>
+                      </button>
+                      {% endif %}
+                    </div>
+
+                  {% elif field.type == 'number' %}
+                    <div class="input-group">
+                      <input type="number" id="{{ field.name }}" name="{{ field.name }}"
+                             value="{{ data.get(field.name, '') }}" class="form-input text-xs"
+                             {% if field.required %}required{% endif %}
+                             {% if field.min is defined %}min="{{ field.min }}"{% endif %}
+                             {% if field.max is defined %}max="{{ field.max }}"{% endif %}
+                             {% if field.step is defined %}step="{{ field.step }}"{% endif %}>
+                      {% if data.get(field.name) %}
+                      <button type="button" class="clear-btn" data-target="{{ field.name }}">
+                        <i class="fa fa-times"></i>
+                      </button>
+                      {% endif %}
+                    </div>
+
+                  {% elif field.type == 'boolean' %}
+                    <label class="checkbox-wrapper">
+                      <input type="checkbox" id="{{ field.name }}" name="{{ field.name }}"
+                             {% if data.get(field.name) %}checked{% endif %} class="form-checkbox">
+                      <span class="ml-2 text-xs text-gray-700">{{ field.description or field.label }}</span>
+                    </label>
+
+                  {% elif field.type == 'select' %}
+                    <div class="select-wrapper">
+                      <select id="{{ 'host-info-select' if field.name == 'host_info' else field.name }}" name="{{ field.name }}" class="form-input text-xs choices-select"
+                              {% if field.required %}required{% endif %}
+                              {% if field.name == 'host_info' %}data-trigger{% endif %}>
+                        <option value="">Please select...</option>
+                        {% for opt in field.options %}
+                        <option value="{{ opt }}" {% if data.get(field.name) == opt %}selected{% endif %}>{{ opt }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+
+                  {% else %}
+                    <!-- 默认 text -->
+                    <div class="input-group">
+                      <input type="text" id="{{ field.name }}" name="{{ field.name }}"
+                             value="{{ data.get(field.name, '') }}" class="form-input text-xs"
+                             {% if field.required %}required{% endif %}
+                             {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+                      {% if data.get(field.name) %}
+                      <button type="button" class="clear-btn" data-target="{{ field.name }}">
+                        <i class="fa fa-times"></i>
+                      </button>
+                      {% endif %}
+                    </div>
+                  {% endif %}
+
+                  {% if field.error %}
+                  <p class="field-error">{{ field.error }}</p>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </form>
+    </div>
+    
+    <!-- 表单底部按钮区域 -->
+    <div class="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end space-x-2">
+      <a href="{{ url_for('generic_crud.list_view', model_name=route_base) }}" class="form-btn-secondary">
+        <i class="fa fa-arrow-left mr-1"></i>Back
+      </a>
+      <button type="submit" form="edit-form" class="form-btn-primary">
+        <i class="fa fa-save mr-2"></i>Save
+      </button>
+    </div>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='js/generic/form.js') }}"></script>
+{% endblock %}
