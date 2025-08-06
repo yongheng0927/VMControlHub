@@ -19,6 +19,40 @@ generic_crud_bp = Blueprint('generic_crud', __name__, url_prefix='/')
 
 # 模型映射表
 MODEL_CONFIG = {
+    # 各模型配置项说明：
+    # 'field_config'：字段配置列表，每个字段包含：
+    #   'db_field': 数据库真实字段名
+    #   'label': 映射给前端展示的字段名称
+    #   'sortable': 布尔值，是否支持排序功能
+    #   'filterable': 布尔值，是否支持过滤功能
+    #   （可选）'render': 自定义渲染函数，用于字段的HTML展示
+    #
+    # 'default_columns'：列表，前端页面默认展示的字段（对应field_config中的db_field）
+    #
+    # 'search_fields'：列表，支持搜索功能的字段（对应field_config中的db_field）
+    #
+    # 'model_name'：字符串，模型映射的名称（用于前端页面标题、提示信息等）
+    #
+    # 'route_base'：字符串，路由基础路径（用于生成CRUD相关接口路径，如/list、/edit等）
+    #
+    # 'form_fields'：表单字段配置列表，每个字段包含：
+    #   'name': 数据库真实字段名
+    #   'label': 映射给前端展示的表单标签
+    #   'type': 表单输入类型（如text、select、number等）
+    #   'required': 布尔值，是否为必填项
+    #   （可选）'options': 当type为select时，下拉选项的列表
+    #
+    # （可选）权限控制字段（布尔值）：
+    #   'no_add': 是否禁用添加功能
+    #   'no_edit': 是否禁用编辑功能
+    #   'no_delete': 是否禁用删除功能
+    #   'no_bulk_edit': 是否禁用批量编辑功能
+    #   'no_bulk_delete': 是否禁用批量删除功能
+    #   'no_import': 是否禁用导入功能
+    #
+    # （可选）排序配置：
+    #   'default_sort': 默认排序字段（对应db_field）
+    #   'default_order': 默认排序方向（'asc'升序/'desc'降序）
     'vms': {
         'model': VM,
         'field_config': [
