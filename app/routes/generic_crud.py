@@ -55,7 +55,8 @@ MODEL_CONFIG = {
             {'name': 'memory_gb', 'label': 'MEMORY(GB)', 'type': 'number', 'required': False},
             {'name': 'disk_gb', 'label': 'DISK(GB)', 'type': 'number', 'required': False},
             {'name': 'domain_name', 'label': 'DOMAIN NAME', 'type': 'text', 'required': False}
-        ]
+        ],
+        'default_sort': 'vm_ip'
     },
     'hosts': {
         'model': Host,
@@ -83,7 +84,7 @@ MODEL_CONFIG = {
             {'name': 'host_info', 'label': 'HOST INFO', 'type': 'text', 'required': True},
             {'name': 'department', 'label': 'DEPARTMENT', 'type': 'text', 'required': True},
             {'name': 'status', 'label': 'STATUS', 'type': 'select', 'options': ['active', 'inactive'], 'required': True},
-            {'name': 'virtualization_type', 'label': 'TYPE','type': 'select','options': ['pve', 'kvm'], 'required': True}
+            {'name': 'virtualization_type', 'label': 'TYPE','type': 'select','options': ['pve', 'kvm'], 'required': True}  
         ]
     },
     'change_logs': {
@@ -600,6 +601,11 @@ def edit_view(config, model_name, id):
     item = model.query.get_or_404(id)
     form_fields = config['form_fields']
     
+    # 确保表单字段配置存在
+    if not form_fields:
+        flash(f"No editable fields configured for {config['model_name']}", 'error')
+        return redirect(url_for('generic_crud.list_view', model_name=model_name))
+    
     if model_name == 'vms':
         hosts = Host.query.all()
         host_options = [(host.host_info) for host in hosts]
@@ -609,44 +615,57 @@ def edit_view(config, model_name, id):
                 field['options'] = host_options
     
     if request.method == 'POST':
+        # 统一获取数据，确保即使空值也能被正确处理
         if request.is_json:
-            data = request.get_json()
+            data = request.get_json() or {}
         else:
-            data = request.form.to_dict()
+            data = request.form.to_dict() or {}
         
         errors = {}
+        # 验证必填字段
         for field in form_fields:
-            if field.get('required') and not data.get(field['name']):
-                errors[field['name']] = f"{field['label']} is a required field"
+            field_name = field['name']
+            field_value = data.get(field_name)
+            
+            # 检查必填字段
+            if field.get('required'):
+                # 处理空字符串和None的情况
+                if field_value in (None, '', ' '):
+                    errors[field_name] = f"{field['label']} is a required field"
         
-        host_id = None
-        
-        # 检查唯一性冲突并记录日志
+        # 模型特定验证
         if model_name == 'hosts' and 'host_info' in data:
             host_info = data['host_info'].strip()
             existing_host = model.query.filter_by(host_info=host_info).first()
-            if existing_host and existing_host.id != id:  # 允许更新为相同的值
+            if existing_host and existing_host.id != id:
                 errors['host_info'] = f"Host '{host_info}' already exists."
         
-        if model_name == 'vms' and 'host_id' in data:
-            host_info = data['host_id']
-            if host_info:
-                host = Host.query.filter_by(host_info=host_info).first()
-                if not host:
-                    errors['host_id'] = f"Host '{host_info}' not found."
+        if model_name == 'vms':
+            # 处理主机ID转换
+            host_id = None
+            if 'host_id' in data:
+                host_info = data['host_id']
+                if host_info:
+                    host = Host.query.filter_by(host_info=host_info).first()
+                    if not host:
+                        errors['host_id'] = f"Host '{host_info}' not found."
+                    else:
+                        host_id = host.id
                 else:
-                    host_id = host.id
+                    if any(f['name'] == 'host_id' and f.get('required') for f in form_fields):
+                        errors['host_id'] = "Host is required"
+            
+            # 验证VM IP
+            if 'vm_ip' in data:
+                vm_ip = data['vm_ip']
+                if vm_ip and not is_valid_ipv4(vm_ip):
+                    errors['vm_ip'] = f"IP address '{vm_ip}' is not a valid IPv4 format."
+                else:
+                    existing_vm = VM.query.filter_by(vm_ip=vm_ip).first()
+                    if existing_vm and existing_vm.id != id:
+                        errors['vm_ip'] = f"VM with IP '{vm_ip}' already exists."
         
-        if model_name == 'vms' and 'vm_ip' in data:
-            vm_ip = data['vm_ip']
-            if vm_ip and not is_valid_ipv4(vm_ip):
-                errors['vm_ip'] = f"IP address '{vm_ip}' is not a valid IPv4 format."
-            else:
-                # 检查VM IP唯一性
-                existing_vm = VM.query.filter_by(vm_ip=vm_ip).first()
-                if existing_vm and existing_vm.id != id:  # 允许更新为相同的值
-                    errors['vm_ip'] = f"VM with IP '{vm_ip}' already exists."
-        
+        # 数字字段验证
         for field in form_fields:
             field_name = field['name']
             if field.get('type') == 'number' and field_name in data:
@@ -658,13 +677,14 @@ def edit_view(config, model_name, id):
                     except (ValueError, TypeError):
                         errors[field_name] = f"{field['label']} must be a valid number."
 
+        # 处理错误
         if errors:
-            # 记录变更尝试日志，即使有错误
             try:
                 changes = []
-                for field_name, error_msg in errors.items():
+                for field_name in [f['name'] for f in form_fields]:
                     old_value = getattr(item, field_name, 'N/A')
                     new_value = data.get(field_name, 'N/A')
+                    error_msg = errors.get(field_name, '')
                     changes.append({
                         'field': field_name,
                         'old_value': old_value,
@@ -672,23 +692,26 @@ def edit_view(config, model_name, id):
                         'error': error_msg
                     })
                 
+                # 确定标识符
                 if model_name == 'vms':
                     identifier = getattr(item, 'vm_ip', str(item.id))
                 elif model_name == 'hosts':
                     identifier = getattr(item, 'host_info', str(item.id))
+                elif model_name == 'users':
+                    identifier = getattr(item, 'username', str(item.id))
                 else:
                     identifier = str(item.id)
                 
                 log_detail = {'changes': changes, 'error': True}
                 log_change('updated', model_name, identifier, status='failed', detail_obj=log_detail)
-                db.session.commit()  # 确保日志被记录
+                db.session.commit()
             except Exception as log_error:
                 current_app.logger.error(f"Failed to log change attempt: {str(log_error)}")
             
             if request.is_json:
                 return jsonify({
                     'success': False, 
-                    'message': 'Please fill in all required fields and ensure that the data is formatted correctly', 
+                    'message': 'Validation errors', 
                     'errors': errors
                 }), 400
             else:
@@ -702,45 +725,62 @@ def edit_view(config, model_name, id):
                                     route_base=config['route_base'],
                                     active_page=config['route_base'])
 
+        # 处理字段更新
         changes = []
         mapper = inspect(model)
+        field_names = [f['name'] for f in form_fields]
         
         for field in form_fields:
             field_name = field['name']
-            if field_name not in data and field.get('type') != 'boolean':
-                continue
-
             field_type = field.get('type')
-            old_value = getattr(item, field_name)
-            new_value = old_value
             
+            # 获取旧值
+            old_value = getattr(item, field_name)
+            
+            # 确定新值 - 确保所有字段都被处理，即使值为空
+            new_value = old_value  # 默认不变
+            field_value = data.get(field_name, '')
+            
+            # 特殊处理主机ID
             if model_name == 'vms' and field_name == 'host_id':
                 new_value = host_id
             elif field_type == 'boolean':
+                # 复选框处理
                 new_value = field_name in data
-            else:
-                new_value_str = data.get(field_name, '')
+            elif field_type == 'number':
+                # 数字处理
                 is_nullable = mapper.columns[field_name].nullable
-                
-                if field_type == 'number':
-                    if new_value_str == '':
-                        new_value = None if is_nullable else 0
-                    else:
-                        try:
-                            num_val = float(new_value_str)
-                            if is_nullable and num_val == 0:
-                                new_value = None
-                            else:
-                                new_value = int(num_val) if num_val.is_integer() else num_val
-                        except (ValueError, TypeError):
-                            new_value = old_value
-                elif field_type == 'text':
-                    if new_value_str.strip() == '' and is_nullable:
-                        new_value = ''
-                    else:
-                        new_value = new_value_str
+                if field_value == '':
+                    new_value = None if is_nullable else 0
+                else:
+                    try:
+                        num_val = float(field_value)
+                        new_value = int(num_val) if num_val.is_integer() else num_val
+                    except (ValueError, TypeError):
+                        new_value = old_value  # 保留旧值
+            elif field_type in ('text', 'select'):
+                # 文本和下拉框处理
+                is_nullable = mapper.columns[field_name].nullable
+                if field_value.strip() == '' and is_nullable:
+                    new_value = ''
+                else:
+                    new_value = field_value
             
-            if old_value != new_value:
+            # 检测实际变化（处理不同类型比较问题）
+            value_changed = False
+            if isinstance(old_value, datetime) and isinstance(new_value, str):
+                # 日期时间比较
+                try:
+                    new_val_dt = datetime.strptime(new_value, '%Y-%m-%d %H:%M:%S')
+                    value_changed = old_value != new_val_dt
+                except ValueError:
+                    value_changed = True
+            elif old_value != new_value:
+                # 普通值比较
+                value_changed = True
+            
+            # 记录变更并更新
+            if value_changed:
                 changes.append({
                     'field': field_name,
                     'old_value': old_value,
@@ -748,83 +788,83 @@ def edit_view(config, model_name, id):
                 })
                 setattr(item, field_name, new_value)
         
+        # 更新时间戳
         beijing_tz = pytz.timezone('Asia/Shanghai')
         if hasattr(item, 'updated_at'):
             item.updated_at = datetime.now(beijing_tz)
         
         try:
+            # 只有有实际变更时才记录日志
             if changes:
+                # 确定标识符
                 if model_name == 'vms':
                     identifier = getattr(item, 'vm_ip', str(item.id))
-                    # 仅当host_id实际变更时才处理主机信息日志
+                    # 处理主机信息变更日志
                     has_host_id_change = any(c['field'] == 'host_id' for c in changes)
                     if has_host_id_change:
-                        # 提取host_id变更的新旧值
                         host_id_changes = [c for c in changes if c['field'] == 'host_id'][0]
-                        old_host_id = host_id_changes['old_value']
-                        new_host_id = host_id_changes['new_value']
-                        
-                        # 查询新旧主机信息
-                        old_host = Host.query.get(old_host_id) if old_host_id else None
-                        new_host = Host.query.get(new_host_id) if new_host_id else None
+                        old_host = Host.query.get(host_id_changes['old_value']) if host_id_changes['old_value'] else None
+                        new_host = Host.query.get(host_id_changes['new_value']) if host_id_changes['new_value'] else None
                         old_host_info = old_host.host_info if old_host else 'Unknown'
                         new_host_info = new_host.host_info if new_host else 'Unknown'
                         
-                        # 仅当主机信息实际变化时才添加host_info日志
                         if old_host_info != new_host_info:
                             changes.append({
                                 'field': 'host_info',
                                 'old_value': old_host_info,
                                 'new_value': new_host_info
                             })
-                    
-                    # 移除冗余的host_relation字段
-                    log_detail = {'changes': changes}
                 elif model_name == 'hosts':
                     identifier = getattr(item, 'host_info', str(item.id))
-                    log_detail = {'changes': changes}
                 elif model_name == 'users':
                     identifier = getattr(item, 'username', str(item.id))
-                    log_detail = {'changes': changes}
                 else:
-                    identifier = getattr(item, 'host_info', getattr(item, 'vm_ip', item.id))
-                    log_detail = {'changes': changes}
+                    identifier = str(item.id)
                 
-                log_change('updated', model_name, identifier, detail_obj=log_detail)
+                log_change('updated', model_name, identifier, detail_obj={'changes': changes})
             
+            # 确保提交事务
             db.session.commit()
 
             if request.is_json:
                 return jsonify({
                     'success': True,
                     'message': f"{config['model_name']} updated successfully",
-                    'id': item.id
+                    'id': item.id,
+                    'changes': len(changes)
                 })
             else:
-                flash(f"{config['model_name']} updated successfully", 'success')
+                flash(f"{config['model_name']} updated successfully. {len(changes)} field(s) changed.", 'success')
                 return redirect(url_for('generic_crud.list_view', model_name=model_name))
                 
         except Exception as e:
             db.session.rollback()
-            identifier = getattr(item, 'host_info', getattr(item, 'vm_ip', item.id))
-            log_change('updated', model_name, identifier, status='failed', detail_obj=data)
-            error_msg = f"Update failed: {str(e)}"
+            current_app.logger.error(f"Edit failed: {str(e)}", exc_info=True)
+            identifier = getattr(item, 'host_info', getattr(item, 'vm_ip', str(item.id)))
+            log_change('updated', model_name, identifier, status='failed', detail_obj={'error': str(e)})
             
             if request.is_json:
                 return jsonify({
                     'success': False,
-                    'message': error_msg
+                    'message': f"Update failed: {str(e)}"
                 }), 500
             else:
-                flash(error_msg, 'error')
+                flash(f"Update failed: {str(e)}", 'error')
     
+    # 加载表单数据（GET请求）
     data = {}
     for field in form_fields:
         field_name = field['name']
         if model_name == 'vms' and field_name == 'host_id':
+            # 显示主机信息而非ID
             data[field_name] = item.host.host_info if (item.host and item.host.host_info) else ''
         else:
-            data[field_name] = getattr(item, field_name)
+            value = getattr(item, field_name)
+            # 格式化日期时间显示
+            if isinstance(value, datetime):
+                data[field_name] = value.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                data[field_name] = value
     
     return render_template('generic/form.html',
                            model_name=config['model_name'],
@@ -833,6 +873,7 @@ def edit_view(config, model_name, id):
                            item=item,
                            route_base=config['route_base'],
                            active_page=config['route_base'])
+
 
 
 @generic_crud_bp.route('/<model_name>/<int:id>/delete', methods=['POST'])
@@ -1317,20 +1358,24 @@ def bulk_edit_view(config, model_name):
     if not all([ids_to_edit, field_to_edit]):
         return jsonify({'success': False, 'message': 'Missing required parameters'}), 400
     
+    # 仅对字符串类型的值进行处理，保留数字和布尔值的原始类型
+    if isinstance(new_value, str):
+        # 处理包含显示文本和值的情况（提取实际值）
+        if ',' in new_value:
+            new_value = new_value.split(',')[0].strip()
+        else:
+            new_value = new_value.strip()  # 去除前后空格
+    
     # 处理空值情况
     if new_value == '':
         new_value = ''
-
-    # 处理包含显示文本和值的情况（提取实际值）
-    if isinstance(new_value, str) and ',' in new_value:
-        new_value = new_value.split(',')[0].strip()
 
     # 获取表单配置并验证字段
     form_fields = config.get('form_fields', [])
     field_config = next((f for f in form_fields if f['name'] == field_to_edit), None)
 
     # 验证必填字段
-    if field_config and field_config.get('required') and new_value is None:
+    if field_config and field_config.get('required') and new_value in (None, '', ' '):
         # 获取需要编辑的项目以记录日志
         items_to_edit = model.query.filter(model.id.in_(ids_to_edit)).all()
         errors = {field_to_edit: f"Field '{field_config.get('label', field_to_edit)}' is required and cannot be empty."}
@@ -1343,24 +1388,27 @@ def bulk_edit_view(config, model_name):
 
     # 针对hosts模型的host_info字段唯一性验证
     if model_name == 'hosts' and field_to_edit == 'host_info' and new_value:
-        existing_host = Host.query.filter_by(host_info=new_value).first()
+        # 查询时也使用trimmed值进行比较
+        trimmed_value = new_value.strip() if isinstance(new_value, str) else new_value
+        existing_host = Host.query.filter_by(host_info=trimmed_value).first()
         if existing_host and existing_host.id not in ids_to_edit:
             # 获取需要编辑的项目以记录日志
             items_to_edit = model.query.filter(model.id.in_(ids_to_edit)).all()
-            errors = {field_to_edit: f"Host '{new_value}' already exists"}
+            errors = {field_to_edit: f"Host '{trimmed_value}' already exists"}
             log_bulk_edit_errors(items_to_edit, model_name, field_to_edit, new_value, errors)
-            return jsonify({'success': False, 'message': f"Host '{new_value}' already exists"}), 400
+            return jsonify({'success': False, 'message': f"Host '{trimmed_value}' already exists"}), 400
 
     # 针对vms模型的vm_ip格式验证
     if model_name == 'vms' and field_to_edit == 'vm_ip' and new_value:
-        if not is_valid_ipv4(new_value):
+        trimmed_value = new_value.strip() if isinstance(new_value, str) else new_value
+        if not is_valid_ipv4(trimmed_value):
             # 获取需要编辑的项目以记录日志
             items_to_edit = model.query.filter(model.id.in_(ids_to_edit)).all()
-            errors = {field_to_edit: f"IP address '{new_value}' is not a valid IPv4 format."}
+            errors = {field_to_edit: f"IP address '{trimmed_value}' is not a valid IPv4 format."}
             log_bulk_edit_errors(items_to_edit, model_name, field_to_edit, new_value, errors)
             return jsonify({
                 'success': False, 
-                'message': f"IP address '{new_value}' is not a valid IPv4 format."
+                'message': f"IP address '{trimmed_value}' is not a valid IPv4 format."
             }), 400
     
     # 验证字段是否允许编辑
@@ -1380,16 +1428,18 @@ def bulk_edit_view(config, model_name):
 
         # 处理host_id特殊逻辑（仅当编辑字段为host_id时）
         if model_name == 'vms' and field_to_edit == 'host_id' and new_value:
-            new_host = Host.query.filter_by(host_info=new_value).first()
+            # 处理主机信息的空格
+            trimmed_host_value = new_value.strip() if isinstance(new_value, str) else new_value
+            new_host = Host.query.filter_by(host_info=trimmed_host_value).first()
             if new_host:
                 new_host_id = new_host.id
                 new_host_info = new_host.host_info
             else:
                 # 获取需要编辑的项目以记录日志
                 items_to_edit = model.query.filter(model.id.in_(ids_to_edit)).all()
-                errors = {field_to_edit: f"Host '{new_value}' does not exist"}
+                errors = {field_to_edit: f"Host '{trimmed_host_value}' does not exist"}
                 log_bulk_edit_errors(items_to_edit, model_name, field_to_edit, new_value, errors)
-                return jsonify({'success': False, 'message': f"Host '{new_value}' does not exist"}), 400
+                return jsonify({'success': False, 'message': f"Host '{trimmed_host_value}' does not exist"}), 400
 
         # 遍历项目，收集需要记录日志的项目（仅关注当前编辑字段）
         for item in items_to_edit:
@@ -1400,6 +1450,9 @@ def bulk_edit_view(config, model_name):
             update_value = new_value
             if model_name == 'vms' and field_to_edit == 'host_id':
                 update_value = new_host_id  # 使用实际host_id
+            # 对字符串类型的更新值进行trim
+            elif isinstance(update_value, str):
+                update_value = update_value.strip()
             
             # 直接比较值（不转字符串），避免None误判
             if old_value == update_value:
@@ -1438,7 +1491,8 @@ def bulk_edit_view(config, model_name):
         if ids_to_actually_update:
             # 处理vm_ip唯一性校验
             if model_name == 'vms' and field_to_edit == 'vm_ip' and new_value:
-                existing_vm = model.query.filter_by(vm_ip=new_value).first()
+                trimmed_value = new_value.strip() if isinstance(new_value, str) else new_value
+                existing_vm = model.query.filter_by(vm_ip=trimmed_value).first()
                 if existing_vm and existing_vm.id not in ids_to_edit:
                     # 为每个受影响的项目生成单独的日志
                     for item in items_to_edit:
@@ -1446,7 +1500,7 @@ def bulk_edit_view(config, model_name):
                         error_detail = {
                             'error': True,
                             'changes': [{
-                                'error': f"IP address '{new_value}' already exists.",
+                                'error': f"IP address '{trimmed_value}' already exists.",
                                 'field': field_to_edit,
                                 'new_value': new_value,
                                 'old_value': getattr(item, field_to_edit)
@@ -1456,7 +1510,7 @@ def bulk_edit_view(config, model_name):
                     
                     return jsonify({
                         'success': False, 
-                        'message': f"IP address '{new_value}' already exists for another VM."
+                        'message': f"IP address '{trimmed_value}' already exists for another VM."
                     }), 400
             
             try:
@@ -1507,8 +1561,6 @@ def bulk_edit_view(config, model_name):
         )
         return jsonify({'success': False, 'message': f'Bulk edit failed: {str(e)}'}), 500
 
-
-
 @generic_crud_bp.route('/api/<model_name>/import', methods=['POST'])
 @login_required
 @require_model
@@ -1553,6 +1605,9 @@ def import_data_view(config, model_name):
             existing_hosts_info = {h.host_info for h in Host.query.with_entities(Host.host_info).all()}
         
         unique_field_label = next((label for label, name in label_to_name_map.items() if name == unique_field_name), None)
+
+        # 暂存成功日志，待事务提交后再记录
+        success_logs = []
 
         for i, row in enumerate(csv_data, start=2):
             if unique_field_label:
@@ -1619,22 +1674,18 @@ def import_data_view(config, model_name):
             if hasattr(model, 'updated_at'):
                 item_data['updated_at'] = now
             
-            new_item = model(** item_data)
+            new_item = model(**item_data)
             db.session.add(new_item)
             
             try:
-                db.session.flush() 
+                db.session.flush()  # 暂存到数据库缓冲区，未提交
             except Exception as flush_error:
                 db.session.rollback()
-                # 检查是否是唯一性约束违反错误
                 if 'Duplicate entry' in str(flush_error):
-                    # 提取重复的值和字段信息
                     error_msg = str(flush_error)
-                    # 记录失败日志
                     log_change('imported', model_name, 'unknown', status='failed', detail_obj={'error': error_msg, 'data': item_data})
                     raise ValueError(f'Row {i} error: Data already exists in database. {error_msg}')
                 else:
-                    # 其他类型的错误
                     log_change('imported', model_name, 'unknown', status='failed', detail_obj={'error': str(flush_error), 'data': item_data})
                     raise
             
@@ -1644,27 +1695,39 @@ def import_data_view(config, model_name):
                 elif model_name == 'hosts':
                     existing_hosts_info.add(row[unique_field_label])
 
-            # 修改日志记录部分，将host_id转换为host_info显示
+            # 准备日志数据（暂存，不立即记录）
             log_item_data = item_data.copy()
             if model_name == 'vms' and 'host_id' in log_item_data:
                 host = Host.query.get(log_item_data['host_id'])
                 if host:
                     log_item_data['host_info'] = host.host_info
             
-            # 修复日志标识：根据模型类型使用正确的标识符
             if model_name == 'hosts':
-                # 主机模型使用host_info作为标识
                 identifier = getattr(new_item, 'host_info', str(new_item.id))
             elif model_name == 'vms':
-                # 虚拟机模型使用vm_ip作为标识
                 identifier = getattr(new_item, 'vm_ip', str(new_item.id))
             else:
-                # 其他模型默认使用id
                 identifier = str(new_item.id)
             
-            log_change('imported', model_name, identifier, detail_obj=log_item_data)
+            # 暂存日志信息，待提交后记录
+            success_logs.append({
+                'action': 'imported',
+                'model_name': model_name,
+                'identifier': identifier,
+                'detail_obj': log_item_data
+            })
 
+        # 所有行处理完成，提交事务
         db.session.commit()
+        
+        # 事务提交成功后，批量记录成功日志
+        for log in success_logs:
+            log_change(
+                log['action'],
+                log['model_name'],
+                log['identifier'],
+                detail_obj=log['detail_obj']
+            )
         
         return jsonify({
             'success': True, 
