@@ -1,18 +1,24 @@
 services:
   mysql:
-    image: mysql:8.0.36
+  build:
+    context: .
+    dockerfile: ./conf/mysql/Dockerfile
+    image: vmcontrol-mysql-8.0.36:v1.0.0
     container_name: vmcontrolhub-mysql
-    ports:
-    - "3306:3306"
     volumes:
-      - ./conf/mysql-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - mysql-data:/var/lib/mysql
-      - ./conf/timezone:/etc/timezone:ro
       - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
     environment:
-      MYSQL_ROOT_PASSWORD: "123456"    # 可以更改为任何字符串，实际使用时请更改为安全的密码
+      MYSQL_ROOT_PASSWORD: "123456"    # 可以更改为任何字符串，实际使用时请更改为安全的密码.
       TZ: Asia/Shanghai
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -u root -p$${MYSQL_ROOT_PASSWORD} -e 'SHOW DATABASES;' | grep -q 'vmcontrolhub'"]
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
 
   app:
     build:
@@ -23,14 +29,13 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - /home/vmcontrolhub/.ssh/ssh-agent.sock:/home/vmcontrolhub/ssh-agent
-      - /home/vmcontrolhub/.ssh/known_hosts:/home/vmcontrolhub/.ssh/known_hosts
-      - ./conf/timezone:/etc/timezone:ro
+      - ssh-data:/home/vmcontrolhub/.ssh
       - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
     environment:
-      SSH_AUTH_SOCK: /home/vmcontrolhub/ssh-agent
+      SSH_AUTH_SOCK: /home/vmcontrolhub/.ssh/ssh-agent.sock
       TZ: Asia/Shanghai
     restart: always
 
 volumes:
   mysql-data:
+  ssh-data:
