@@ -1,10 +1,6 @@
 FROM python:3.10-slim
 
-RUN rm -rf /etc/apt/sources.list.d/*.sources \
-    && echo 'deb https://mirrors.tuna.tsinghua.edu.cn/debian bookworm main contrib non-free' > /etc/apt/sources.list \
-    && echo 'deb https://mirrors.tuna.tsinghua.edu.cn/debian bookworm-updates main contrib non-free' >> /etc/apt/sources.list \
-    && echo 'deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main contrib non-free' >> /etc/apt/sources.list \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends openssh-client \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -20,11 +16,17 @@ WORKDIR /home/vmcontrolhub
 COPY --chown=vmcontrolhub:vmcontrolhub requirements.txt run.py .env ./
 COPY --chown=vmcontrolhub:vmcontrolhub app/ ./app/
 COPY --chown=vmcontrolhub:vmcontrolhub static/ ./static/
+COPY --chown=vmcontrolhub:vmcontrolhub entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh
+
+RUN pip install --no-cache-dir -r requirements.txt
 
 USER vmcontrolhub
 
 ENV PATH="/home/vmcontrolhub/.local/bin:${PATH}"
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 CMD ["python", "run.py"]
