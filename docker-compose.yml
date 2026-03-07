@@ -1,8 +1,8 @@
 services:
   mysql:
-  build:
-    context: .
-    dockerfile: ./conf/mysql/Dockerfile
+    build:
+      context: .
+      dockerfile: ./conf/mysql/Dockerfile
     image: vmcontrol-mysql-8.0.36:v1.0.0
     container_name: vmcontrolhub-mysql
     volumes:
@@ -35,6 +35,9 @@ services:
       SSH_AUTH_SOCK: /home/vmcontrolhub/.ssh/ssh-agent.sock
       TZ: Asia/Shanghai
     restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
 
 volumes:
   mysql-data:
