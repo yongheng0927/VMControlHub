@@ -42,8 +42,10 @@
     <!-- 表单内容区域 -->
     <div class="p-0">
       <form id="edit-form" method="POST" action="{% if item %}{{ url_for('generic_crud.edit_view', model_name=route_base, id=item.id) }}{% else %}{{ url_for('generic_crud.create_view', model_name=route_base) }}{% endif %}">
-        <!-- 添加CSRF令牌 -->
+        <!-- 添加 CSRF 令牌 -->
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <!-- 添加来源页面 URL 参数，用于保存后返回正确页面 -->
+        <input type="hidden" name="referrer" value="{{ request.referrer or '' }}"/>
         <table class="w-full border-collapse form-table">
           <tbody>
             {% for field in form_fields %}
