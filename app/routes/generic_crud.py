@@ -603,7 +603,24 @@ def create_view(config, model_name):
                 })
             else:
                 flash(f"{config['model_name']} created successfully", 'success')
-                return redirect(url_for('generic_crud.list_view', model_name=model_name))
+                # 解析 referrer URL 以保留分页等参数
+                referrer = request.form.get('referrer', '')
+                if referrer:
+                    from urllib.parse import urlparse, parse_qs
+                    parsed = urlparse(referrer)
+                    query_params = parse_qs(parsed.query)
+                    # 保留 page、search、sort、order、filter 等参数
+                    redirect_params = {'model_name': model_name}
+                    for param in ['page', 'search', 'sort', 'order', 'visible_columns']:
+                        if param in query_params:
+                            redirect_params[param] = query_params[param][0]
+                    # 处理动态过滤参数
+                    for key, value in query_params.items():
+                        if key not in ['page', 'search', 'sort', 'order', 'visible_columns'] and key not in ['csrf_token']:
+                            redirect_params[key] = value[0]
+                    return redirect(url_for('generic_crud.list_view', **redirect_params))
+                else:
+                    return redirect(url_for('generic_crud.list_view', model_name=model_name))
                 
         except Exception as e:
             db.session.rollback()
@@ -775,7 +792,7 @@ def edit_view(config, model_name, id):
             new_value = old_value  # 默认不变
             field_value = data.get(field_name, '')
             
-            # 特殊处理主机ID
+            # 特殊处理主机 ID
             if model_name == 'vms' and field_name == 'host_id':
                 new_value = host_id
             elif field_type == 'boolean':
@@ -795,8 +812,11 @@ def edit_view(config, model_name, id):
             elif field_type in ('text', 'select'):
                 # 文本和下拉框处理
                 is_nullable = mapper.columns[field_name].nullable
-                if field_value.strip() == '' and is_nullable:
-                    new_value = ''
+                # 处理 "None" 字符串，转换为 Python 的 None
+                if field_value == 'None':
+                    field_value = None
+                if field_value is None or (isinstance(field_value, str) and field_value.strip() == ''):
+                    new_value = None if is_nullable else ''
                 else:
                     new_value = field_value
             
@@ -869,7 +889,24 @@ def edit_view(config, model_name, id):
                 })
             else:
                 flash(f"{config['model_name']} updated successfully. {len(changes)} field(s) changed.", 'success')
-                return redirect(url_for('generic_crud.list_view', model_name=model_name))
+                # 解析 referrer URL 以保留分页等参数
+                referrer = request.form.get('referrer', '')
+                if referrer:
+                    from urllib.parse import urlparse, parse_qs
+                    parsed = urlparse(referrer)
+                    query_params = parse_qs(parsed.query)
+                    # 保留 page、search、sort、order、filter 等参数
+                    redirect_params = {'model_name': model_name}
+                    for param in ['page', 'search', 'sort', 'order', 'visible_columns']:
+                        if param in query_params:
+                            redirect_params[param] = query_params[param][0]
+                    # 处理动态过滤参数
+                    for key, value in query_params.items():
+                        if key not in ['page', 'search', 'sort', 'order', 'visible_columns'] and key not in ['csrf_token']:
+                            redirect_params[key] = value[0]
+                    return redirect(url_for('generic_crud.list_view', **redirect_params))
+                else:
+                    return redirect(url_for('generic_crud.list_view', model_name=model_name))
                 
         except Exception as e:
             db.session.rollback()
@@ -885,18 +922,21 @@ def edit_view(config, model_name, id):
             else:
                 flash(f"Update failed: {str(e)}", 'error')
     
-    # 加载表单数据（GET请求）
+    # 加载表单数据（GET 请求）
     data = {}
     for field in form_fields:
         field_name = field['name']
         if model_name == 'vms' and field_name == 'host_id':
-            # 显示主机信息而非ID
+            # 显示主机信息而非 ID
             data[field_name] = item.host.host_info if (item.host and item.host.host_info) else ''
         else:
             value = getattr(item, field_name)
             # 格式化日期时间显示
             if isinstance(value, datetime):
                 data[field_name] = value.strftime('%Y-%m-%d %H:%M:%S')
+            elif value is None:
+                # 处理 None 值，转换为空字符串
+                data[field_name] = ''
             else:
                 data[field_name] = value
     
@@ -960,6 +1000,25 @@ def delete_view(config, model_name, id):
         db.session.commit()
 
         flash(f'{config["model_name"]} deleted successfully', 'success')
+        
+        # 解析 referrer URL 以保留分页等参数
+        referrer = request.headers.get('Referer', '')
+        if referrer:
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(referrer)
+            query_params = parse_qs(parsed.query)
+            # 保留 page、search、sort、order、filter 等参数
+            redirect_params = {'model_name': model_name}
+            for param in ['page', 'search', 'sort', 'order', 'visible_columns']:
+                if param in query_params:
+                    redirect_params[param] = query_params[param][0]
+            # 处理动态过滤参数
+            for key, value in query_params.items():
+                if key not in ['page', 'search', 'sort', 'order', 'visible_columns'] and key not in ['csrf_token']:
+                    redirect_params[key] = value[0]
+            return redirect(url_for('generic_crud.list_view', **redirect_params))
+        else:
+            return redirect(url_for('generic_crud.list_view', model_name=model_name))
     except Exception as e:
         db.session.rollback()
         log_change('deleted', model_name, identifier, status='failed', detail_obj=item_details)
@@ -1699,7 +1758,11 @@ def import_data_view(config, model_name):
                     if field_name == 'host_id' and label == host_info_label:
                         item_data[field_name] = host_id
                     else:
-                        item_data[field_name] = val
+                        # 处理空值和 "None" 字符串，转换为 Python 的 None
+                        if val is None or val == '' or val == 'None':
+                            item_data[field_name] = None
+                        else:
+                            item_data[field_name] = val
             
             beijing_tz = pytz.timezone('Asia/Shanghai')
             now = datetime.now(beijing_tz)
