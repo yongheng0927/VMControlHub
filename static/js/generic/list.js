@@ -266,6 +266,19 @@ function openModal(id) {
   const content = modal?.querySelector('[id$="-content"]');
   if (!modal || !content) return;
   
+  // 如果是导入模态框，重置状态
+  if (id === 'import-modal') {
+    const fileInput = document.getElementById('import-file-input');
+    const fileNameSpan = document.getElementById('file-name');
+    const feedbackDiv = document.getElementById('import-feedback');
+    const confirmImportBtn = document.getElementById('confirm-import');
+    
+    if (fileInput) fileInput.value = '';
+    if (fileNameSpan) fileNameSpan.textContent = 'No file chosen';
+    if (feedbackDiv) feedbackDiv.innerHTML = '';
+    if (confirmImportBtn) confirmImportBtn.disabled = false;
+  }
+  
   modal.classList.remove('hidden');
   setTimeout(() => {
     content.classList.remove('scale-95', 'opacity-0');
@@ -277,6 +290,19 @@ function closeModal(id) {
   const modal = document.getElementById(id);
   const content = modal?.querySelector('[id$="-content"]');
   if (!modal || !content) return;
+
+  // 如果是导入模态框，重置状态
+  if (id === 'import-modal') {
+    const fileInput = document.getElementById('import-file-input');
+    const fileNameSpan = document.getElementById('file-name');
+    const feedbackDiv = document.getElementById('import-feedback');
+    const confirmImportBtn = document.getElementById('confirm-import');
+    
+    if (fileInput) fileInput.value = '';
+    if (fileNameSpan) fileNameSpan.textContent = 'No file chosen';
+    if (feedbackDiv) feedbackDiv.innerHTML = '';
+    if (confirmImportBtn) confirmImportBtn.disabled = false;
+  }
 
   content.classList.remove('scale-100', 'opacity-100');
   content.classList.add('scale-95', 'opacity-0');
