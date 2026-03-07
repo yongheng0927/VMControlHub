@@ -35,8 +35,8 @@ cd VMControlHub
 2. 检查系统时间与时区设置，建议统一使用 Asia/Shanghai 时区
 
 ### 配置SSH agent
-1. 如果需要管理的主机内拥有相同用户,例如user01,请确保user01拥有家目录,拥有sudo qm/virsh等命令的权限,可以将`.env`SSH_USER后的值替换为user01
-2. 如果需要管理的主机内没有相同用户,建议使用ansible等工具创建vmcontrolhub用户,请确保vmcontrolhub用户拥有家目录,拥有sudo qm/virsh等命令的权限
+1. 如果需要管理的主机内拥有相同用户，例如user01，请确保user01拥有家目录，拥有sudo qm/virsh等命令的权限，可以将`.env`SSH_USER后的值替换为user01
+2. 如果需要管理的主机内没有相同用户，建议使用ansible等工具创建vmcontrolhub用户，请确保vmcontrolhub用户拥有家目录，拥有sudo qm/virsh等命令的权限
 3. 确保你要管理的主机里/home/SSH_USER/.ssh/authorized_keys内已经存在了vmcontrolhub或是user01用户的公钥
 
 ### 添加数据库字段
@@ -47,7 +47,7 @@ cd VMControlHub
 2. 在`app/models.py`中找到对应的模型类（如`VM`、`Host`等）
 3. 添加新的字段定义，例如：
    ```python
-   new_field = db.Column(db.String(100), nullable=True, comment='新字段说明')
+   new_field = db.Column(db.String(100)， nullable=True， comment='新字段说明')
    ```
 4. 如果是添加到现有表中，需要创建数据库迁移脚本或手动更新数据库表结构
 5. 如果需要在前端后端处理该字段，请相应地更新`generic_crud.py`中对应的模型的配置
@@ -61,7 +61,7 @@ cd VMControlHub
 2. 访问应用：http://localhost:5000
 3. 初始默认账号密码为：admin/admin（可以在`conf/mysql/init.sql`中修改）
 4. docker exec -it vmcontrolhub-app cat /home/vmcontrolhub/.ssh/id_rsa.pub (复制公钥到要管理的主机内的authorized_keys)
-5. 确保要管理的主机内的SSH服务已启动,并监听在默认端口22
+5. 确保要管理的主机内的SSH服务已启动，并监听在默认端口22
 
 ### 数据库模型说明
 
@@ -94,5 +94,11 @@ cd VMControlHub
 2. 确认浏览器版本，推荐使用 Chrome、Firefox 等现代浏览器最新版本
 
 每个模型都定义了相应的字段和关系，可以根据需要进行扩展。
+
+## 更新日志
+- 2026-03-06：
+1. 移除了setup_ssh_agent_container.sh脚本，将ssh agent systemd服务提供的功能内置到容器内，并在Dockerfile中添加了相关的配置，可以在容器内使用ssh agent来管理宿主机的ssh连接，避免在宿主机上配置ssh agent
+2. mysql数据库改造，不再直接将init.sql文件挂载到容器内，而是在conf/mysql/中新增Dockerfile，用于直接构建vmcontrolhub项目需要的mysql镜像，镜像内包含了init.sql文件，镜像构建时就会初始化数据库，而不是在mysql容器启动时执行init.sql文件。
+
 
 代码内注释和README文件持续更新中...
