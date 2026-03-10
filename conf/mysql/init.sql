@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS `hosts` (
     `host_info` VARCHAR(255) NOT NULL COMMENT '主机标识,格式为"ipv4_hostname"',
     `virtualization_type` ENUM('kvm', 'pve', 'other') NOT NULL COMMENT '虚拟化类型,决定管理方式',
     `department` VARCHAR(100) NOT NULL COMMENT '所属部门,用于权限和统计',
-    `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active' COMMENT '主机状态,active表示可用,inactive表示不可用',
+    `status` ENUM('running', 'stopped', 'unknown') NOT NULL DEFAULT 'running' COMMENT '主机状态,running表示运行中,stopped表示已停止,unknown表示未知',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间,自动维护',
     `vm_count` INT NOT NULL DEFAULT 0 COMMENT '宿主机关联的VM数量',
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS `vms` (
     `os_type` VARCHAR(100) NOT NULL COMMENT '操作系统类型',
     `vm_user` VARCHAR(100) NOT NULL COMMENT '虚拟机登录用户名',
     `host_id` INT NOT NULL COMMENT '所属宿主机ID,关联hosts表的id',
-    `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active' COMMENT '虚拟机状态,active表示可用,inactive表示不可用',
+    `status` ENUM('running', 'stopped', 'unknown') NOT NULL DEFAULT 'running' COMMENT '虚拟机状态,running表示运行中,stopped表示已停止,unknown表示未知',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间,自动维护',
     UNIQUE INDEX `idx_vms_vm_ip` (`vm_ip`) COMMENT '虚拟机IP唯一索引',
@@ -107,6 +107,7 @@ VALUES ('admin', 'admin', 'admin', TRUE, NULL);
 
 
 -- 创建应用用户并分配所有权限
+-- 修改密码时请同步更新.env中的数据库配置
 CREATE USER IF NOT EXISTS 'mysql_user'@'%' IDENTIFIED BY '123456';
 GRANT ALL PRIVILEGES ON `vmcontrolhub`.* TO 'mysql_user'@'%';
 FLUSH PRIVILEGES;
