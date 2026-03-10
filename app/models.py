@@ -50,7 +50,7 @@ class Host(db.Model):
     host_info = db.Column(db.String(255), unique=True, nullable=False, comment='主机标识,格式为"ipv4_hostname"')
     virtualization_type = db.Column(ENUM('kvm', 'pve', 'other', name='virtualization_enum'), nullable=False, comment='虚拟化类型,决定管理方式')
     department = db.Column(db.String(100), nullable=False, comment='所属部门,用于权限和统计')
-    status = db.Column(ENUM('active', 'inactive', name='host_status_enum'), nullable=False, server_default='active', comment='主机状态')
+    status = db.Column(ENUM('running', 'stopped', 'unknown', name='host_status_enum'), nullable=False, server_default='unknown', comment='主机状态')
     created_at = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), comment='创建时间')
     updated_at = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间,自动维护')
     vm_count = db.Column(db.Integer, nullable=False, server_default='0', comment='宿主机关联的VM数量')
@@ -73,7 +73,7 @@ class VM(db.Model):
     os_type = db.Column(db.String(100), nullable=False, comment='操作系统类型')
     vm_user = db.Column(db.String(100), nullable=False, comment='虚拟机登录用户名')
     host_id = db.Column(db.Integer, db.ForeignKey('hosts.id', ondelete='CASCADE'), nullable=False, comment='所属宿主机ID,关联hosts表的id')
-    status = db.Column(ENUM('active', 'inactive', name='vm_status_enum'), nullable=False, server_default='active', comment='虚拟机状态')
+    status = db.Column(ENUM('running', 'stopped', 'unknown', name='vm_status_enum'), nullable=False, server_default='unknown', comment='虚拟机状态')
     created_at = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), comment='创建时间')
     updated_at = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间,自动维护')
 
