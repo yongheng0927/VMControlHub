@@ -3,6 +3,7 @@
 from flask import Blueprint, render_template
 from flask_login import login_required, current_user
 from app.models import Host, VM, OperationLog, db
+from app.services.permission_service import role_required
 from sqlalchemy import func
 from types import SimpleNamespace
 from sqlalchemy.orm import joinedload
@@ -18,11 +19,11 @@ def index():
     # Admin Manager 视图
     if current_user.role in ['admin', 'manager']:
         total_hosts = Host.query.count()
-        active_hosts = Host.query.filter_by(status='active').count()
-        inactive_hosts = Host.query.filter_by(status='inactive').count()
+        running_hosts = Host.query.filter_by(status='running').count()
+        stopped_hosts = Host.query.filter_by(status='stopped').count()
         total_vms = VM.query.count()
-        active_vms = VM.query.filter_by(status='active').count()
-        inactive_vms = VM.query.filter_by(status='inactive').count()
+        running_vms = VM.query.filter_by(status='running').count()
+        stopped_vms = VM.query.filter_by(status='stopped').count()
 
         ops = (
             OperationLog.query
@@ -45,12 +46,12 @@ def index():
         return render_template(
             'dashboard.html',
             total_hosts=total_hosts,
-            active_hosts=active_hosts,
-            inactive_hosts=inactive_hosts,
+            running_hosts=running_hosts,
+            stopped_hosts=stopped_hosts,
             total_vms=total_vms,
-            active_vms=active_vms,
-            inactive_vms=inactive_vms,
-            recent_operations=[op.__dict__ for op in recent_operations], # 转换为字典列表
+            running_vms=running_vms,
+            stopped_vms=stopped_vms,
+            recent_operations=[op.__dict__ for op in recent_operations],
             active_page='dashboard'
         )
 
