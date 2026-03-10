@@ -3,6 +3,11 @@ from flask_login import login_required
 from flask_sqlalchemy.pagination import Pagination
 from app.models import VM, Host, User, db, ChangeLog, OperationLog
 from app.services.log_service import log_change, to_dict
+from app.services.permission_service import (
+    role_required, admin_required, manager_or_admin_required,
+    can_edit_model, can_delete_model, can_create_model
+)
+from app.services.vm_status_sync_service import VMStatusSyncService
 import json
 import pytz
 from functools import wraps
@@ -83,7 +88,7 @@ MODEL_CONFIG = {
             {'name': 'vm_user', 'label': 'USER', 'type': 'text', 'required': True},
             {'name': 'vm_ip', 'label': 'IP ADDRESS', 'type': 'text', 'required': True},
             {'name': 'os_type', 'label': 'OS TYPE', 'type': 'text', 'required': True},
-            {'name': 'status', 'label': 'STATUS', 'type': 'select', 'options': ['active', 'inactive'],'required': True},
+            {'name': 'status', 'label': 'STATUS', 'type': 'select', 'options': ['running', 'stopped', 'unknown'],'required': True},
             {'name': 'host_id', 'label': 'HOST INFO', 'type': 'select', 'required': True},
             {'name': 'cpus', 'label': 'CPUS', 'type': 'number', 'required': False},
             {'name': 'memory_gb', 'label': 'MEMORY(GB)', 'type': 'number', 'required': False},
@@ -117,7 +122,7 @@ MODEL_CONFIG = {
         'form_fields': [
             {'name': 'host_info', 'label': 'HOST INFO', 'type': 'text', 'required': True},
             {'name': 'department', 'label': 'DEPARTMENT', 'type': 'text', 'required': True},
-            {'name': 'status', 'label': 'STATUS', 'type': 'select', 'options': ['active', 'inactive'], 'required': True},
+            {'name': 'status', 'label': 'STATUS', 'type': 'select', 'options': ['running', 'stopped', 'unknown'], 'required': True},
             {'name': 'virtualization_type', 'label': 'TYPE','type': 'select','options': ['pve', 'kvm'], 'required': True}  
         ]
     },
@@ -467,6 +472,7 @@ def list_view(config, model_name):
 @generic_crud_bp.route('/<model_name>/create', methods=['GET', 'POST'])
 @login_required
 @require_model
+@can_create_model(None)
 def create_view(config, model_name):
     model = config['model']
     form_fields = config['form_fields']
@@ -647,6 +653,7 @@ def create_view(config, model_name):
 @generic_crud_bp.route('/<model_name>/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 @require_model
+@can_edit_model(None)
 def edit_view(config, model_name, id):
     model = config['model']
     item = model.query.get_or_404(id)
@@ -953,6 +960,7 @@ def edit_view(config, model_name, id):
 @generic_crud_bp.route('/<model_name>/<int:id>/delete', methods=['POST'])
 @login_required
 @require_model
+@can_delete_model(None)
 def delete_view(config, model_name, id):
     model = config['model']
     item = model.query.get_or_404(id)
@@ -1353,6 +1361,7 @@ def serialize_field_config(field_config):
 @generic_crud_bp.route('/<model_name>/bulk-delete', methods=['POST'])
 @login_required
 @require_model
+@admin_required
 def bulk_delete_view(config, model_name):
     model = config['model']
     data = request.get_json()
@@ -1440,6 +1449,7 @@ def log_bulk_edit_errors(items_to_edit, model_name, field_to_edit, new_value, er
 @generic_crud_bp.route('/<model_name>/bulk-edit', methods=['POST'])
 @login_required
 @require_model
+@manager_or_admin_required
 def bulk_edit_view(config, model_name):
     model = config['model']
     data = request.get_json()
@@ -1657,6 +1667,7 @@ def bulk_edit_view(config, model_name):
 @generic_crud_bp.route('/api/<model_name>/import', methods=['POST'])
 @login_required
 @require_model
+@manager_or_admin_required
 def import_data_view(config, model_name):
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -1886,7 +1897,7 @@ def export_csv_view(config, model_name):
     for item in items:
         row = []
         for field in visible_fields:
-            # 特殊处理host_id字段，显示host_info而不是host_id
+            # 特殊处理 host_id 字段，显示 host_info 而不是 host_id
             if model_name == 'vms' and field['db_field'] == 'host_id':
                 host_id = getattr(item, 'host_id', None)
                 if host_id and host_id in host_map:
@@ -1918,9 +1929,52 @@ def export_csv_view(config, model_name):
     return response
 
 
+# VM 状态同步 API 接口
+@generic_crud_bp.route('/vms/sync-status', methods=['POST'])
+@login_required
+@manager_or_admin_required
+def sync_vm_status_api():
+    """
+    同步所有 VM 的真实状态
+    
+    权限要求：manager 或 admin
+    频率限制：通过 vm_status_sync_service 中的 limiter 控制
+    """
+    try:
+        ssh_user = os.getenv('SSH_USER')
+        if not ssh_user:
+            return jsonify({
+                'success': False,
+                'error': 'SSH_USER not configured'
+            }), 500
+        
+        sync_service = VMStatusSyncService(ssh_user)
+        result = sync_service.sync_all_vms()
+        
+        return jsonify({
+            'success': True,
+            'message': f"同步完成！成功：{result.get('success', 0)}, 失败：{result.get('failed', 0)}, 变化：{result.get('changed', 0)}",
+            'data': {
+                'total': result.get('total', 0),
+                'success': result.get('success', 0),
+                'failed': result.get('failed', 0),
+                'changed': result.get('changed', 0),
+                'unchanged': result.get('unchanged', 0)
+            }
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"VM status sync failed: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @generic_crud_bp.route('/<model_name>/reset-password', methods=['POST'])
 @login_required
 @require_model
+@admin_required
 def reset_user_password(config, model_name):
     user_id = request.form.get('user_id')
     user = User.query.get(user_id)
