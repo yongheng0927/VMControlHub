@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS `users` (
     `password_hash` VARCHAR(255) NULL COMMENT '密码哈希值,存储加密后的密码',
     `temp_password` VARCHAR(255) NULL COMMENT '临时明文密码',
     `role` ENUM('admin', 'manager', 'operator') NOT NULL DEFAULT 'operator' COMMENT '用户角色,控制权限范围',
-    `must_change_password` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '密码重置标志,首次登录强制修改密码(admin默认开启)',
+    `must_change_password` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '密码重置标志,用于判断是否需要强制修改密码',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '用户创建时间',
     `last_login` DATETIME NULL COMMENT '最后登录时间',
     `password_last_changed` DATETIME NULL COMMENT '最后密码修改时间',
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 
 CREATE TABLE IF NOT EXISTS `hosts` (
     `id` INT AUTO_INCREMENT PRIMARY KEY COMMENT '主机id,自增主键',
-    `host_info` VARCHAR(255) NOT NULL COMMENT '主机标识,格式为"ipv4_hostname"',
+    `host_info` VARCHAR(255) NOT NULL COMMENT '主机标识,格式为"ipv4_xxx"',
     `virtualization_type` ENUM('kvm', 'pve', 'other') NOT NULL COMMENT '虚拟化类型,决定管理方式',
     `department` VARCHAR(100) NOT NULL COMMENT '所属部门,用于权限和统计',
     `status` ENUM('running', 'stopped', 'unknown') NOT NULL DEFAULT 'running' COMMENT '主机状态,running表示运行中,stopped表示已停止,unknown表示未知',
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS `operation_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='虚拟机操作日志表';
 
 
--- 插入默认管理员用户 - 使用明文密码admin,初次登录后必须修改
+-- 插入默认管理员用户 - 使用明文密码admin,初次登录必须修改
 INSERT INTO `users` (`username`, `temp_password`, `role`, `must_change_password`, `password_last_changed`)
 VALUES ('admin', 'admin', 'admin', TRUE, NULL);
 
