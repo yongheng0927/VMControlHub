@@ -61,7 +61,7 @@ git clone https://github.com/yongheng0927/VMControlHub.git
 3. 初始默认账号密码为：admin/admin（可以在`conf/mysql/init.sql`中修改）
 4. 复制公钥到要管理的主机内的authorized_keys
    ```bash 
-   docker exec -it vmcontrolhub-app cat /home/vmcontrolhub/.ssh/id_rsa.pub 
+   docker exec vmcontrolhub-app cat /home/vmcontrolhub/.ssh/id_rsa.pub 
    ```
 5. 确保要管理的主机内的SSH服务已启动，并监听在默认端口22
 
