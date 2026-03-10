@@ -34,6 +34,11 @@
       <button id="table-set-btn" class="px-2.5 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 btn-float flex items-center text-xs">
         <i class="fa fa-table mr-1 text-xs"></i>Table Settings
       </button>
+      {% if model_name.lower() == 'vms' and current_user.role in ['admin', 'manager'] %}
+      <button type="button" id="sync-vm-status-btn" class="px-2.5 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 btn-float flex items-center text-xs">
+        <i class="fa fa-refresh mr-1 text-xs"></i>Sync Status
+      </button>
+      {% endif %}
       {% if not no_import and current_user.role in ['admin', 'manager'] %}
       <button type="button" id="import-data-btn" class="px-2.5 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 btn-float text-xs">
         <i class="fa fa-download mr-1 text-xs"></i>Import
@@ -145,10 +150,12 @@
                  <span class="blue-badge">Update</span>
                 {% elif value == 'delete' %}
                  <span class="red-badge">Delete</span>
-                {% elif value == 'active' %}
-                 <span class="green-badge">Active</span>
-                {% elif value == 'inactive' %}
-                 <span class="gray-badge">Inactive</span>
+                {% elif value == 'running' %}
+                 <span class="green-badge">Running</span>
+                {% elif value == 'stopped' %}
+                 <span class="red-badge">Stopped</span>
+                {% elif value == 'unknown' %}
+                 <span class="gray-badge">Unknown</span>
                 {% elif value == 'start' %}
                  <span class="green-badge">Start</span>
                 {% elif value == 'shutdown' %}
@@ -479,12 +486,161 @@
       const userRole = "{{ current_user.role if current_user.is_authenticated else '' }}";
       const currentModel = "{{ model_name.lower() }}";
 
-      // 确保manager看不到批量删除按钮（双重保险）
+      // 确保 manager 看不到批量删除按钮（双重保险）
       if (userRole === 'manager') {
         const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
         if (bulkDeleteBtn) bulkDeleteBtn.remove();
       }
+      
+      // VM 状态同步按钮事件
+      const syncBtn = document.getElementById('sync-vm-status-btn');
+      if (syncBtn && currentModel.toLowerCase() === 'vms') {
+        syncBtn.addEventListener('click', function() {
+          if (!confirm('Are you sure you want to sync all VM info? This may take a few minutes.')) {
+            return;
+          }
+          
+          // 禁用按钮并显示加载状态
+          syncBtn.disabled = true;
+          const originalText = syncBtn.innerHTML;
+          syncBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>Syncing...';
+          
+          // 发送同步请求
+          fetch('/vms/sync-status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': window.csrfToken
+            }
+          })
+          .then(response => response.json())
+          .then(data => {
+            // 根据后端返回的 success 字段判断
+            if (data.success) {
+              showNotification('success', data.message || 'Sync completed successfully!');
+            } else {
+              // 如果有错误信息，显示错误信息；否则显示失败统计
+              const errorMsg = data.error || (data.data ? `Sync completed with ${data.data.failed} failures` : 'Sync failed, please try again');
+              showNotification('error', errorMsg);
+              syncBtn.disabled = false;
+              syncBtn.innerHTML = originalText;
+            }
+          })
+          .catch(error => {
+            console.error('Sync error:', error);
+            showNotification('error', 'Network error, please check connection');
+            syncBtn.disabled = false;
+            syncBtn.innerHTML = originalText;
+          });
+        });
+      }
     });
+    
+    // 显示通知函数
+    function showNotification(type, message) {
+      // 创建遮罩层
+      const overlay = document.createElement('div');
+      overlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+      
+      // 通知框 - 完全参考模态框样式
+      const notification = document.createElement('div');
+      notification.className = 'bg-white rounded-lg shadow-lg w-full max-w-md mx-4 transform transition-all scale-100 overflow-hidden';
+      
+      // 头部
+      const header = document.createElement('div');
+      header.className = 'px-6 py-4 border-b border-gray-200 flex justify-between items-center';
+      
+      // 标题区域
+      const titleArea = document.createElement('div');
+      titleArea.className = 'flex items-center space-x-3';
+      
+      // 图标
+      const icon = document.createElement('div');
+      icon.className = 'w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center';
+      
+      const iconInner = document.createElement('i');
+      iconInner.className = type === 'success' 
+        ? 'fa fa-check-circle text-xl text-blue-600'
+        : 'fa fa-exclamation-circle text-xl text-red-600';
+      
+      icon.appendChild(iconInner);
+      
+      // 标题
+      const title = document.createElement('h3');
+      title.className = 'text-base font-semibold text-gray-900';
+      title.textContent = type === 'success' ? 'Sync Successful' : 'Sync Failed';
+      
+      titleArea.appendChild(icon);
+      titleArea.appendChild(title);
+      
+      // 关闭按钮（右上角 X）
+      const closeBtnHeader = document.createElement('button');
+      closeBtnHeader.innerHTML = '&times;';
+      closeBtnHeader.className = 'text-gray-400 hover:text-gray-600 transition-colors text-xl font-bold';
+      
+      header.appendChild(titleArea);
+      header.appendChild(closeBtnHeader);
+      
+      // 内容区域
+      const contentArea = document.createElement('div');
+      contentArea.className = 'px-6 py-4';
+      
+      // 消息内容
+      const messageEl = document.createElement('p');
+      messageEl.className = 'text-sm text-gray-600 leading-relaxed';
+      messageEl.textContent = message;
+      contentArea.appendChild(messageEl);
+      
+      // 按钮区域（底部）
+      const buttonArea = document.createElement('div');
+      buttonArea.className = 'px-6 py-4 border-t border-gray-200 flex justify-end';
+      
+      // 关闭按钮
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = 'Close';
+      closeBtn.className = 'px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm';
+      closeBtn.onclick = function() {
+        notification.style.transform = 'scale(0.95)';
+        notification.style.opacity = '0';
+        setTimeout(() => {
+          overlay.remove();
+          // 成功后自动刷新页面
+          if (type === 'success') {
+            window.location.reload();
+          }
+        }, 300);
+      };
+      buttonArea.appendChild(closeBtn);
+      
+      // 组装
+      notification.appendChild(header);
+      notification.appendChild(contentArea);
+      notification.appendChild(buttonArea);
+      overlay.appendChild(notification);
+      document.body.appendChild(overlay);
+      
+      // 事件绑定
+      const doClose = function() {
+        notification.style.transform = 'scale(0.95)';
+        notification.style.opacity = '0';
+        setTimeout(() => {
+          overlay.remove();
+          // 成功后自动刷新页面
+          if (type === 'success') {
+            window.location.reload();
+          }
+        }, 300);
+      };
+      
+      closeBtnHeader.onclick = doClose;
+      
+      // 点击遮罩层也可以关闭
+      overlay.onclick = function(e) {
+        if (e.target === overlay) {
+          doClose();
+        }
+      };
+    }
   </script>
 
 {% endblock %}

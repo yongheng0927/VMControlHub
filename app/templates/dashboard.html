@@ -36,11 +36,11 @@
           </a>
 
           <!-- 活跃主机 -->
-          <a href="{{ url_for('generic_crud.list_view', model_name='hosts', status='active') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+          <a href="{{ url_for('generic_crud.list_view', model_name='hosts', status='running') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-xs text-neutral font-medium">Active Hosts</p>
-                <p class="text-xl font-bold text-green-600 mt-0.5">{{ active_hosts }}</p>
+                <p class="text-xs text-neutral font-medium">Running Hosts</p>
+                <p class="text-xl font-bold text-green-600 mt-0.5">{{ running_hosts }}</p>
               </div>
               <div class="p-2 bg-green-100 rounded-full">
                 <i class="fa fa-check-circle text-green-600 text-lg"></i>
@@ -49,11 +49,11 @@
           </a>
           
           <!-- 非活跃主机 -->
-          <a href="{{ url_for('generic_crud.list_view', model_name='hosts', status='inactive') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+          <a href="{{ url_for('generic_crud.list_view', model_name='hosts', status='stopped') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-xs text-neutral font-medium">Inactive Hosts</p>
-                <p class="text-xl font-bold text-red-600 mt-0.5">{{ inactive_hosts }}</p>
+                <p class="text-xs text-neutral font-medium">Stopped Hosts</p>
+                <p class="text-xl font-bold text-red-600 mt-0.5">{{ stopped_hosts }}</p>
               </div>
               <div class="p-2 bg-red-100 rounded-full">
                 <i class="fa fa-times-circle text-red-600 text-lg"></i>
@@ -87,11 +87,11 @@
           </a>
           
           <!-- 活跃虚拟机 -->
-          <a href="{{ url_for('generic_crud.list_view', model_name='vms', status='active') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+          <a href="{{ url_for('generic_crud.list_view', model_name='vms', status='running') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-xs text-neutral font-medium">Active VMs</p>
-                <p class="text-xl font-bold text-green-600 mt-0.5">{{ active_vms }}</p>
+                <p class="text-xs text-neutral font-medium">Running VMs</p>
+                <p class="text-xl font-bold text-green-600 mt-0.5">{{ running_vms }}</p>
               </div>
               <div class="p-2 bg-green-100 rounded-full">
                 <i class="fa fa-check-circle text-green-600 text-lg"></i>
@@ -100,11 +100,11 @@
           </a>
           
           <!-- 非活跃虚拟机 -->
-          <a href="{{ url_for('generic_crud.list_view', model_name='vms', status='inactive') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
+          <a href="{{ url_for('generic_crud.list_view', model_name='vms', status='stopped') }}" class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1 cursor-pointer">
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-xs text-neutral font-medium">Inactive VMs</p>
-                <p class="text-xl font-bold text-red-600 mt-0.5">{{ inactive_vms }}</p>
+                <p class="text-xs text-neutral font-medium">Stopped VMs</p>
+                <p class="text-xl font-bold text-red-600 mt-0.5">{{ stopped_vms }}</p>
               </div>
               <div class="p-2 bg-red-100 rounded-full">
                 <i class="fa fa-times-circle text-red-600 text-lg"></i>
