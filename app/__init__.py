@@ -10,16 +10,19 @@ from app.models import db, User
 from app.config import MysqlConfig, SecretConfig
 from flask_wtf import CSRFProtect
 from flask_login import LoginManager
+from flask_apscheduler import APScheduler
 
 
 login_manager = LoginManager()
 csrf = CSRFProtect()
+scheduler = APScheduler()
 
 # 蓝图
 from app.routes.auth import auth_bp
 from app.routes.dashboard import dashboard_bp
 from app.routes.generic_crud import generic_crud_bp
 from app.routes.control_vm import control_vm_bp
+from app.routes.vm_sync import vm_sync_bp
 
 
 def create_app():
@@ -33,7 +36,7 @@ def create_app():
         static_url_path='/static',
         template_folder=template_path
     )
-
+    
     # 加载配置
     app.config.from_object(MysqlConfig)
     app.config.from_object(SecretConfig)
@@ -42,6 +45,22 @@ def create_app():
     db.init_app(app)
     login_manager.init_app(app)
     csrf.init_app(app)
+    
+    # 初始化和启动定时任务
+    scheduler.init_app(app)
+    scheduler.start()
+    
+    # 添加定时任务：每天凌晨 00:05 同步一次 VM 状态
+    from app.services.vm_status_sync_service import sync_vm_status_task
+    scheduler.add_job(
+        id='vm_status_sync',
+        func=sync_vm_status_task,
+        trigger='cron',  # 使用 cron 触发器
+        hour=0,
+        minute=5,
+        replace_existing=True
+    )
+    app.logger.info("Scheduled VM status sync job added (daily at 00:05)")
 
     # 未登录访问需要登录的路由时，重定向到哪个 endpoint
     login_manager.login_view = 'auth.login_page'
@@ -53,6 +72,7 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(generic_crud_bp)
     app.register_blueprint(control_vm_bp)
+    app.register_blueprint(vm_sync_bp)
 
     @app.route('/')
     def index():
