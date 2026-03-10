@@ -13,7 +13,7 @@ RUN groupadd -g 2000 vmcontrolhub \
 
 WORKDIR /home/vmcontrolhub
 
-COPY --chown=vmcontrolhub:vmcontrolhub requirements.txt run.py .env ./
+COPY --chown=vmcontrolhub:vmcontrolhub requirements.txt run.py .env gunicorn_config.py ./
 COPY --chown=vmcontrolhub:vmcontrolhub app/ ./app/
 COPY --chown=vmcontrolhub:vmcontrolhub static/ ./static/
 COPY --chown=vmcontrolhub:vmcontrolhub entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -29,4 +29,4 @@ ENV PATH="/home/vmcontrolhub/.local/bin:${PATH}"
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-CMD ["python", "run.py"]
+CMD ["gunicorn", "-c", "gunicorn_config.py", "run:app"]
