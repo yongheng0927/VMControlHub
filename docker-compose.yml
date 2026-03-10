@@ -9,13 +9,13 @@ services:
       - mysql-data:/var/lib/mysql
       - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
     environment:
-      MYSQL_ROOT_PASSWORD: "123456"    # 可以更改为任何字符串，实际使用时请更改为安全的密码.
+      MYSQL_ROOT_PASSWORD: "root-vmcontrolhub-mysql"    # 可以更改为任何字符串，实际使用时请更改为安全的密码.
       TZ: Asia/Shanghai
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "mysql -u root -p$${MYSQL_ROOT_PASSWORD} -e 'SHOW DATABASES;' | grep -q 'vmcontrolhub'"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s
-      timeout: 30s
+      timeout: 10s
       retries: 5
       start_period: 30s
 
@@ -26,19 +26,35 @@ services:
       dockerfile: Dockerfile
     image: vmcontrol-app:v1.0.0
     container_name: vmcontrolhub-app
-    ports:
-      - "5000:5000"
     volumes:
       - ssh-data:/home/vmcontrolhub/.ssh
       - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
+      - static-data:/home/vmcontrolhub/static
     environment:
-      SSH_AUTH_SOCK: /home/vmcontrolhub/.ssh/ssh-agent.sock
       TZ: Asia/Shanghai
+      SSH_KEY_FILE: /home/vmcontrolhub/.ssh/id_rsa
     restart: always
     depends_on:
       mysql:
         condition: service_healthy
+    
+
+  nginx:
+    image: nginx:1.24-alpine
+    container_name: vmcontrolhub-nginx
+    ports:
+    - "80:80"
+    volumes:
+    - ./conf/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    - static-data:/home/vmcontrolhub/static
+    - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
+    environment:
+      TZ: Asia/Shanghai
+    depends_on:
+      - app
+
 
 volumes:
   mysql-data:
   ssh-data:
+  static-data:
