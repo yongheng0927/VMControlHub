@@ -54,7 +54,11 @@ def log_change(action, object_type, object_identifier, status='success', detail_
     调用者需要负责在完成业务逻辑后统一提交会话。
     """
     try:
-        username = current_user.username if current_user.is_authenticated else 'system'
+        # 安全获取当前用户（在非请求上下文中 current_user 可能为 None）
+        try:
+            username = current_user.username if current_user.is_authenticated else 'system'
+        except (AttributeError, RuntimeError):
+            username = 'system'
         
         # 将复数模型名 (如 'vms') 转为单数 (如 'vm') 以匹配 ENUM
         if object_type.endswith('s'):
