@@ -3,57 +3,23 @@ from flask_login import login_required, current_user
 from sqlalchemy.orm import joinedload
 from app.models import db, VM, OperationLog
 from app.services.permission_service import role_required
+from app.utils.ssh_helper import execute_ssh_command, get_ssh_user
 import os
 import re
-import paramiko
 from datetime import datetime
-from paramiko import RSAKey
 
 control_vm_bp = Blueprint('control_vm', __name__, url_prefix='/')
 
-SSH_KEY_FILE = os.getenv('SSH_KEY_FILE')
-
-# ------------------------------
-# 核心工具函数
-# ------------------------------
-def execute_ssh_command(host, username, command):
-    """执行 SSH 命令，返回 (输出，错误，退出码)"""
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    try:
-        private_key = RSAKey.from_private_key_file(SSH_KEY_FILE)
-        client.connect(
-            hostname=host,
-            username=username,
-            pkey=private_key,
-            timeout=10,
-            allow_agent=False,
-            look_for_keys=False
-        )
-        stdin, stdout, stderr = client.exec_command(command)
-        exit_status = stdout.channel.recv_exit_status()
-        output = stdout.read().decode('utf-8').strip()
-        error = stderr.read().decode('utf-8').strip()
-        return output, error, exit_status
-    
-    except Exception as e:
-        current_app.logger.error(f"SSH connection failed: host={host}, username={username}, error={str(e)}")
-        return None, str(e), -1
-    
-    finally:
-        if client.get_transport() and client.get_transport().is_active():
-            client.close()
-
 
 def get_vm_identifier_cached(host_type, host_ip, ssh_user, vm_ip, cache={}):
-    """获取VM标识并缓存结果"""
+    """获取 VM 标识并缓存结果"""
     cache_key = f"{host_type}_{host_ip}_{vm_ip}"
     if cache_key in cache:
         return cache[cache_key]
     
     # 首次获取并缓存
     if host_type == 'pve':
-        output, err, _ = execute_ssh_command(host_ip, ssh_user, "sudo qm list")
+        output, err, _ = execute_ssh_command(host_ip, "sudo qm list", ssh_user)
         if err:
             cache[cache_key] = (None, f"Failed to get PVE list: {err}")
         else:
@@ -65,7 +31,7 @@ def get_vm_identifier_cached(host_type, host_ip, ssh_user, vm_ip, cache={}):
             cache[cache_key] = (vmid, f"PVE VM with IP {vm_ip} not found" if not vmid else None)
     
     elif host_type == 'kvm':
-        output, err, _ = execute_ssh_command(host_ip, ssh_user, "sudo virsh list --all --name")
+        output, err, _ = execute_ssh_command(host_ip, "sudo virsh list --all --name", ssh_user)
         if err:
             cache[cache_key] = (None, f"Failed to get KVM list: {err}")
             return cache[cache_key]
@@ -87,7 +53,7 @@ def get_vm_identifier_cached(host_type, host_ip, ssh_user, vm_ip, cache={}):
 @control_vm_bp.route('/control_vm/power', methods=['POST'])
 @login_required
 def power_control():
-    ssh_user = os.getenv('SSH_USER')
+    ssh_user = get_ssh_user()
     if not ssh_user:
         current_app.logger.info('Environment variable SSH_USER not configured')
 
@@ -95,10 +61,7 @@ def power_control():
     ip = data.get('ip')
     action = data.get('action')
 
-
-
     vm = VM.query.options(joinedload(VM.host)).filter_by(vm_ip=ip).first()
-
 
     host_ip = vm.host.host_info.split('_')[0]
     host_type = vm.host.virtualization_type
@@ -112,26 +75,17 @@ def power_control():
             raise Exception(err)
 
         command = f"sudo qm {action} {identifier}" if host_type == 'pve' else f"sudo virsh {action} {identifier}"
-        output, err, exit_status = execute_ssh_command(host_ip, ssh_user, command)
+        output, err, exit_status = execute_ssh_command(host_ip, command, ssh_user)
 
         if err and not (action == 'shutdown' and 'not running' in err.lower()):
             raise Exception(f"Command execution failed: {err} (exit code: {exit_status})")
 
         log_status = 'success'
         log_details = f"Operation success (command: {command})"
-        # 电源操作成功日志
         current_app.logger.info(f"Power operation success: user={current_user.username}, VM_IP={ip}, host IP={host_ip}, virtualization type={host_type}, SSH user={ssh_user}, action={action}")
         
-        # 成功后同步 VM 状态和资源信息
-        if action in ['start', 'poweron', 'shutdown', 'poweroff', 'stop']:
-            try:
-                sync_vm_status_and_resources(vm, host_ip, host_type, ssh_user, identifier)
-            except Exception as sync_err:
-                current_app.logger.warning(f"Failed to sync VM status after power operation: {sync_err}")
-
     except Exception as e:
         log_details = str(e)
-        # 电源操作失败日志
         current_app.logger.error(f"Power operation failed: user={current_user.username}, VM_IP={ip}, host IP={host_ip}, virtualization type={host_type}, action={action}, error={log_details}")
     
     finally:
@@ -155,13 +109,12 @@ def power_control():
 @control_vm_bp.route('/control_vm/status', methods=['GET'])
 @login_required
 def get_status():
-    ssh_user = os.getenv('SSH_USER') or os.getenv('VM_SSH_USER')
+    ssh_user = get_ssh_user()
     ip = request.args.get('ip')
     if not ip or not ssh_user:
         current_app.logger.info('Environment variable SSH_USER not configured')
 
     vm = VM.query.options(joinedload(VM.host)).filter_by(vm_ip=ip).first()
-
 
     host_ip = vm.host.host_info.split('_')[0]
     host_type = vm.host.virtualization_type
@@ -174,13 +127,12 @@ def get_status():
             raise Exception(err)
 
         command = f"sudo qm status {identifier}" if host_type == 'pve' else f"sudo virsh domstate {identifier}"
-        output, err, _ = execute_ssh_command(host_ip, ssh_user, command)
+        output, err, _ = execute_ssh_command(host_ip, command, ssh_user)
 
         status = 'running' if (not err and 'running' in output.lower()) else 'stopped' if host_type == 'pve' else 'shut off'
 
     except Exception as e:
         details = str(e)
-        # 状态查询错误日志
         current_app.logger.error(f"Status query failed: VM_IP={ip}, host IP={host_ip}, virtualization type={host_type}, SSH user={ssh_user}, error={details}")
 
     return jsonify({
@@ -213,93 +165,3 @@ def index():
         error=error,
         active_page='control'
     )
-
-
-# ------------------------------
-# VM 状态和资源同步函数
-# ------------------------------
-def sync_vm_status_and_resources(vm, host_ip, host_type, ssh_user, identifier):
-    """
-    同步 VM 的状态和资源信息（CPU、内存）
-    
-    :param vm: VM 对象
-    :param host_ip: 宿主机 IP
-    :param host_type: 虚拟化类型 (pve/kvm)
-    :param ssh_user: SSH 用户
-    :param identifier: VM 标识符 (PVE 的 VMID 或 KVM 的 VM 名)
-    """
-    try:
-        if host_type == 'pve':
-            # PVE: 获取状态
-            status_output, status_err, _ = execute_ssh_command(host_ip, ssh_user, f"sudo qm status {identifier}")
-            if not status_err:
-                # 更新状态（数据库使用 running/stopped/unknown）
-                if 'running' in status_output.lower():
-                    vm.status = 'running'
-                else:
-                    vm.status = 'stopped'
-            
-            # PVE: 获取配置信息（包含 CPU、内存）
-            config_output, config_err, _ = execute_ssh_command(host_ip, ssh_user, f"sudo qm config {identifier}")
-            if not config_err:
-                config_lines = config_output.split('\n')
-                
-                # 先解析 sockets（默认为 1）
-                sockets = 1
-                for line in config_lines:
-                    if line.startswith('sockets:'):
-                        try:
-                            sockets = int(line.split(':')[1].strip())
-                        except (ValueError, IndexError):
-                            pass
-                        break
-                
-                # 解析 CPU 核心数（cores * sockets）
-                for line in config_lines:
-                    if line.startswith('cores:'):
-                        try:
-                            cores = int(line.split(':')[1].strip())
-                            vm.cpus = cores * sockets
-                        except (ValueError, IndexError):
-                            pass
-                        break
-                    
-                    # 解析内存大小（MB）
-                    elif line.startswith('memory:'):
-                        try:
-                            memory_mb = int(line.split(':')[1].strip())
-                            vm.memory_gb = memory_mb // 1024  # 转换为 GB
-                        except (ValueError, IndexError):
-                            pass
-        
-        elif host_type == 'kvm':
-            # KVM: 获取状态
-            status_output, status_err, _ = execute_ssh_command(host_ip, ssh_user, f"sudo virsh domstate {identifier}")
-            if not status_err:
-                if 'running' in status_output.lower():
-                    vm.status = 'running'
-                elif 'shut off' in status_output.lower():
-                    vm.status = 'stopped'
-            
-            # KVM: 获取 XML 配置（包含 CPU、内存信息）
-            xml_output, xml_err, _ = execute_ssh_command(host_ip, ssh_user, f"sudo virsh dumpxml {identifier}")
-            if not xml_err:
-                # 解析 CPU 核心数
-                cpu_match = re.search(r'<vcpu[^>]*>(\d+)</vcpu>', xml_output)
-                if cpu_match:
-                    vm.cpus = int(cpu_match.group(1))
-                
-                # 解析内存（KB 转换为 GB）
-                memory_match = re.search(r'<memory[^>]*>(\d+)</memory>', xml_output)
-                if memory_match:
-                    memory_kb = int(memory_match.group(1))
-                    vm.memory_gb = memory_kb // (1024 * 1024)  # KB 转换为 GB
-        
-        # 提交数据库更新
-        db.session.commit()
-        current_app.logger.info(f"VM status and resources synced: VM_IP={vm.vm_ip}, status={vm.status}, CPU={vm.cpus}, Memory={vm.memory_gb}GB")
-        
-    except Exception as e:
-        current_app.logger.error(f"Error syncing VM status and resources: {e}")
-        db.session.rollback()
-        raise
