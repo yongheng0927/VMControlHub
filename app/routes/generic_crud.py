@@ -8,6 +8,7 @@ from app.services.permission_service import (
     can_edit_model, can_delete_model, can_create_model
 )
 from app.services.vm_status_sync_service import VMStatusSyncService
+from app.utils.ssh_helper import get_ssh_user
 import json
 import pytz
 from functools import wraps
@@ -1941,7 +1942,7 @@ def sync_vm_status_api():
     频率限制：通过 vm_status_sync_service 中的 limiter 控制
     """
     try:
-        ssh_user = os.getenv('SSH_USER')
+        ssh_user = get_ssh_user()
         if not ssh_user:
             return jsonify({
                 'success': False,
