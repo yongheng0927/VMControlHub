@@ -5,6 +5,7 @@ from flask_login import login_required, current_user
 from functools import wraps
 from app.models import User
 from app.services.vm_status_sync_service import VMStatusSyncService, limiter
+from app.utils.ssh_helper import get_ssh_user
 
 vm_sync_bp = Blueprint('vm_sync', __name__, url_prefix='/api/vm-status')
 
@@ -49,7 +50,7 @@ def sync_vm_status():
 
     """
     try:
-        ssh_user = current_app.config.get('SSH_USER')
+        ssh_user = get_ssh_user()
         if not ssh_user:
             return jsonify({
                 'success': False,
@@ -123,7 +124,7 @@ def sync_single_vm(vm_ip):
             }), 404
         
         # 同步状态
-        ssh_user = current_app.config.get('SSH_USER')
+        ssh_user = get_ssh_user()
         if not ssh_user:
             return jsonify({
                 'success': False,
