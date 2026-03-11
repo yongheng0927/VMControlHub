@@ -80,20 +80,3 @@ def execute_ssh_command(host, command, ssh_user=None, timeout=30):
     finally:
         if client.get_transport() and client.get_transport().is_active():
             client.close()
-
-
-def test_ssh_connection(host, ssh_user=None):
-    """
-    测试 SSH 连接是否正常
-    
-    :param host: 宿主机 IP
-    :param ssh_user: SSH 用户名（可选）
-    :return: (success: bool, error: str or None)
-    """
-    try:
-        output, error, exit_status = execute_ssh_command(host, "echo test", ssh_user)
-        if error or not output:
-            return False, error
-        return True, None
-    except Exception as e:
-        return False, str(e)
