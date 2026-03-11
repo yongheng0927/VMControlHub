@@ -3,7 +3,6 @@
 import re
 import os
 import time
-import paramiko
 from datetime import datetime
 from flask import current_app
 from flask_limiter import Limiter
@@ -11,7 +10,7 @@ from flask_limiter.util import get_remote_address
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.models import db, VM, Host
 from app.services.log_service import log_change
-from paramiko import RSAKey
+from app.utils.ssh_helper import execute_ssh_command, get_ssh_user
 
 
 # 创建限流器
@@ -21,9 +20,6 @@ limiter = Limiter(
     default_limits=["200 per day", "50 per hour"]
 )
 
-SSH_KEY_FILE = os.getenv('SSH_KEY_FILE')
-
-
 class VMStatusSyncService:
     """VM 状态同步服务（只同步状态）"""
     
@@ -32,7 +28,7 @@ class VMStatusSyncService:
     
     def execute_ssh_command(self, host, command, timeout=30):
         """
-        执行 SSH 命令
+        执行 SSH 命令（包装函数）
         
         :param host: 宿主机 IP 或 Host 对象
         :param command: 要执行的命令
@@ -40,36 +36,7 @@ class VMStatusSyncService:
         :return: (output, error, exit_status)
         """
         host_ip = host if isinstance(host, str) else host.split('_')[0]
-        
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
-        try:
-            private_key = RSAKey.from_private_key_file(SSH_KEY_FILE)
-            client.connect(
-                hostname=host_ip,
-                username=self.ssh_user,
-                pkey=private_key,
-                timeout=timeout,
-                banner_timeout=timeout,
-                auth_timeout=timeout,
-                allow_agent=False,
-                look_for_keys=False
-            )
-            stdin, stdout, stderr = client.exec_command(command)
-            exit_status = stdout.channel.recv_exit_status()
-            output = stdout.read().decode('utf-8').strip()
-            error = stderr.read().decode('utf-8').strip()
-            
-            return output, error, exit_status
-            
-        except Exception as e:
-            current_app.logger.error(f"SSH connection failed: host={host_ip}, error={str(e)}")
-            return None, str(e), -1
-        
-        finally:
-            if client.get_transport() and client.get_transport().is_active():
-                client.close()
+        return execute_ssh_command(host_ip, command, self.ssh_user, timeout)
     
     def sync_all_vms(self, max_workers=10):
         """
@@ -908,20 +875,32 @@ def sync_vm_status_task():
     定时任务：同步所有 VM 的状态
     每天凌晨 00:05 自动执行一次
     """
-    try:
-        ssh_user = os.getenv('SSH_USER')
-        if not ssh_user:
-            current_app.logger.warning("SSH_USER not configured, skipping scheduled VM status sync")
-            return
-        
-        sync_service = VMStatusSyncService(ssh_user)
-        result = sync_service.sync_all_vms()
-        
-        current_app.logger.info(
-            f"Scheduled VM status sync completed: "
-            f"total={result['total']}, success={result['success']}, "
-            f"failed={result['failed']}, changed={result['changed']}, "
-            f"unchanged={result['unchanged']}"
-        )
-    except Exception as e:
-        current_app.logger.error(f"Scheduled VM status sync failed: {e}", exc_info=True)
+    from app import scheduler
+    from flask import _app_ctx_stack
+    
+    # 获取当前应用上下文，如果不存在则使用 scheduler 的应用
+    app = None
+    if _app_ctx_stack.top:
+        app = _app_ctx_stack.top.app
+    else:
+        # 从 scheduler 获取应用实例
+        app = scheduler.app
+    
+    with app.app_context():
+        try:
+            ssh_user = get_ssh_user()
+            if not ssh_user:
+                current_app.logger.warning("SSH_USER not configured, skipping scheduled VM status sync")
+                return
+            
+            sync_service = VMStatusSyncService(ssh_user)
+            result = sync_service.sync_all_vms()
+            
+            current_app.logger.info(
+                f"Scheduled VM status sync completed: "
+                f"total={result['total']}, success={result['success']}, "
+                f"failed={result['failed']}, changed={result['changed']}, "
+                f"unchanged={result['unchanged']}"
+            )
+        except Exception as e:
+            current_app.logger.error(f"Scheduled VM status sync failed: {e}", exc_info=True)
