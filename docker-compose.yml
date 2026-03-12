@@ -50,6 +50,7 @@ services:
     - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
     environment:
       TZ: Asia/Shanghai
+    restart: always
     depends_on:
       - app
 
