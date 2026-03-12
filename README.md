@@ -49,7 +49,8 @@ git clone https://github.com/yongheng0927/VMControlHub.git
    new_field = db.Column(db.String(100)， nullable=True， comment='新字段说明')
    ```
 4. 如果是添加到现有表中，需要创建数据库迁移脚本或手动更新数据库表结构
-5. 如果需要在前端后端处理该字段，请相应地更新`generic_crud.py`中对应的模型的配置
+5. 如果需要在前端后端处理该字段，请相应地更新`app/generic_crud.py`中对应的模型的配置
+6. 如果需更改control_vm路由下显示的vm列表，请更新 `app/templates/control_vm.html` 中的表格部分
 
 ### 使用Docker部署
 
@@ -109,6 +110,8 @@ git clone https://github.com/yongheng0927/VMControlHub.git
 4. 新增conf/nginx/nginx.conf，配置nginx反向代理到应用服务，同时提供静态文件服务
 5. 新增app/routes/vm_sync.py，app/services/vm_sync_service.py; 用于同步宿主机上的VM信息到数据库
 
+- 2026-03-11：
+1. 新增app/utils/ssh_helper.py，用于封装ssh连接和执行命令的函数，所有需要ssh连接的地方都直接调用该函数，避免重复代码，也便于后续维护和修改
 
 
 代码内注释和README文件持续更新中...
