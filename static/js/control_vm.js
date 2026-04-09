@@ -90,17 +90,15 @@ document.addEventListener('DOMContentLoaded', () => {
     updateButtons('loading');
     await new Promise(r => requestAnimationFrame(r));
 
-    // 设置10秒超时计时器
+    // 设置60秒超时计时器
     let timeoutId = setTimeout(() => {
-      // 如果10秒后仍未获取到状态，设置为unknown
-      console.log('Timeout fetching status, set to unknown');
       setStatus('unknown');
       updateButtons('unknown');
-    }, 10000); // 10秒超时
+    }, 60000); // 60秒超时
 
     try {
       const url = `${getStatusUrl}?ip=${encodeURIComponent(ip)}`;
-      const resp = await fetchWithTimeout(url, { method: 'GET' }, 9000); // 比超时短一点，留1秒缓冲
+      const resp = await fetchWithTimeout(url, { method: 'GET' }, 5900); // 比超时短一点，留1秒缓冲
 
       // 如果成功获取响应，清除超时计时器
       clearTimeout(timeoutId);
