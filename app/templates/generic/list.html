@@ -49,9 +49,14 @@
         <i class="fa fa-plus mr-1 text-xs"></i>Add
       </a>
       {% endif %}
-      <a href="{{ url_for('generic_crud.export_csv_view', model_name=route_base,** request.args) }}" class="px-2.5 py-1 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 btn-float text-xs flex items-center">
+      <button type="button" id="export-data-btn" class="px-2.5 py-1 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 btn-float text-xs flex items-center">
         <i class="fa fa-upload mr-1 text-xs"></i>Export
-      </a>
+      </button>
+      {% if current_user.role == 'admin' and route_base in ['hosts', 'vms'] %}
+      <button type="button" id="custom-field-settings-btn" class="px-2.5 py-1 bg-purple-600 text-white rounded-lg hover:bg-purple-700 btn-float text-xs flex items-center">
+        <i class="fa fa-cog mr-1 text-xs"></i>Custom Fields
+      </button>
+      {% endif %}
     </div>
   </div>
 
@@ -67,7 +72,7 @@
           <i class="fa fa-pencil mr-1"></i>Bulk Edit
         </button>
         {% endif %}
-        {% if not no_bulk_delete %}
+        {% if not no_bulk_delete and current_user.role == 'admin' %}
         <button id="bulk-delete-btn" class="px-2 py-1 bg-red-600 text-white rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed table-field-value" disabled>
           <i class="fa fa-trash mr-1"></i>Bulk Delete
         </button>
@@ -463,11 +468,122 @@
         </div>
     </div>
 </div>
+
+<!-- 自定义字段设置弹窗 -->
+<div id="custom-field-settings-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-2xl mx-4 transform transition-all duration-300 scale-95 opacity-0" id="custom-field-settings-content">
+    <div class="p-4 border-b border-gray-100 flex justify-between items-center">
+      <h3 class="text-lg font-bold text-gray-900 table-field-value" id="custom-field-modal-title">Custom Fields Settings</h3>
+      <button id="close-custom-field-settings" class="text-gray-400 hover:text-gray-600 transition-colors">
+        <i class="fa fa-times table-field-value"></i>
+      </button>
+    </div>
+    <div class="p-4">
+      <div class="mb-4 flex justify-between items-center">
+        <p class="text-sm text-gray-600 table-field-value">Manage custom fields for this resource type.</p>
+        <button id="add-new-field-btn" class="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 btn-float text-xs">
+          <i class="fa fa-plus mr-1"></i>Add Field
+        </button>
+      </div>
+      
+      <div class="border border-gray-200 rounded-lg overflow-hidden">
+        <table class="w-full border-collapse">
+          <thead>
+            <tr class="bg-gray-50">
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b">Field Name</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b">Type</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b">Required</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b">Sort</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-700 border-b">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="custom-fields-list">
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="p-4 border-t border-gray-100 flex justify-end space-x-2">
+      <button id="cancel-custom-field-settings" class="px-3 py-1.5 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors table-field-value">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增/编辑自定义字段弹窗 -->
+<div id="custom-field-form-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md mx-4 transform transition-all duration-300 scale-95 opacity-0" id="custom-field-form-content">
+    <div class="p-4 border-b border-gray-100 flex justify-between items-center">
+      <h3 class="text-lg font-bold text-gray-900 table-field-value" id="field-form-title">Add Custom Field</h3>
+      <button id="close-custom-field-form" class="text-gray-400 hover:text-gray-600 transition-colors">
+        <i class="fa fa-times table-field-value"></i>
+      </button>
+    </div>
+    <div class="p-4">
+      <form id="custom-field-form">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1 table-field-value">
+            Field Display Name <span class="text-red-500">*</span>
+          </label>
+          <input type="text" id="form-field-name" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all table-field-value" placeholder="e.g., Rack Number">
+        </div>
+        
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1 table-field-value">
+            Field Type <span class="text-red-500">*</span>
+          </label>
+          <select id="form-field-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all table-field-value">
+            <option value="">Please select...</option>
+            <option value="int">Integer</option>
+            <option value="varchar">Varchar</option>
+            <option value="datetime">DateTime</option>
+            <option value="enum">Select (Dropdown)</option>
+          </select>
+        </div>
+        
+        <div class="mb-4" id="form-field-length-container" style="display: none;">
+          <label class="block text-sm font-medium text-gray-700 mb-1 table-field-value">Field Length</label>
+          <input type="number" id="form-field-length" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all table-field-value" value="255">
+        </div>
+        
+        <div class="mb-4 flex items-center">
+          <input type="checkbox" id="form-is-required" class="w-4 h-4 text-primary focus:ring-primary rounded mr-2">
+          <label for="form-is-required" class="text-sm text-gray-700 table-field-value">Required Field</label>
+        </div>
+        
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1 table-field-value">Default Value</label>
+          <input type="text" id="form-default-value" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all table-field-value" placeholder="Enter default value">
+        </div>
+        
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1 table-field-value">Sort Order</label>
+          <input type="number" id="form-sort" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all table-field-value" value="0">
+        </div>
+        
+        <div class="mb-4" id="form-enum-options-container" style="display: none;">
+          <label class="block text-sm font-medium text-gray-700 mb-1 table-field-value">Select Options</label>
+          <div id="enum-options-list" class="space-y-2 mb-2"></div>
+          <button type="button" id="add-enum-option-btn" class="px-3 py-1 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50">
+            <i class="fa fa-plus mr-1"></i>Add Option
+          </button>
+        </div>
+      </form>
+    </div>
+    <div class="p-4 border-t border-gray-100 flex justify-end space-x-2">
+      <button id="cancel-field-form" class="px-3 py-1.5 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors table-field-value">
+        Cancel
+      </button>
+      <button id="save-field-form" class="px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors btn-float table-field-value">
+        Save
+      </button>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
-
 {% block extra_scripts %}
-  <!-- 注入全局变量 -->
   <script>
     window.currentModelName = "{{ route_base }}";
     window.allFields = {{ serializable_field_config|tojson }};
@@ -478,23 +594,18 @@
     window.sortOrder = "{{ sort_order }}";
     window.formFields = {{ form_fields|tojson if form_fields is defined else '[]' }};
     window.hostInfo = "{{ request.args.get('host_info', '') }}";
+    window.customFieldsApiBase = "/api/{{ 'hosts' if route_base == 'hosts' else 'vms' }}/custom-fields";
   </script>
   <script src="{{ url_for('static', filename='js/generic/list.js') }}"></script>
-
+  <script src="{{ url_for('static', filename='js/generic/custom-fields.js') }}"></script>
+  
   <script>
+    console.log('Inline script loaded');
+    console.log('window.currentModelName:', window.currentModelName);
+    // VM 状态同步按钮事件
     document.addEventListener('DOMContentLoaded', function() {
-      const userRole = "{{ current_user.role if current_user.is_authenticated else '' }}";
-      const currentModel = "{{ model_name.lower() }}";
-
-      // 确保 manager 看不到批量删除按钮（双重保险）
-      if (userRole === 'manager') {
-        const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
-        if (bulkDeleteBtn) bulkDeleteBtn.remove();
-      }
-      
-      // VM 状态同步按钮事件
       const syncBtn = document.getElementById('sync-vm-status-btn');
-      if (syncBtn && currentModel.toLowerCase() === 'vms') {
+      if (syncBtn) {
         syncBtn.addEventListener('click', function() {
           if (!confirm('Are you sure you want to sync all VM info? This may take a few minutes.')) {
             return;
@@ -515,20 +626,26 @@
           })
           .then(response => response.json())
           .then(data => {
-            // 根据后端返回的 success 字段判断
-            if (data.success) {
-              showNotification('success', data.message || 'Sync completed successfully!');
+            // 构建通知消息
+            let message = '';
+            if (data.success && data.data) {
+              message = `Success: ${data.data.success} , Failed: ${data.data.failed} , Changed: ${data.data.changed}`;
+            } else if (data.data) {
+              message = `Success: ${data.data.success} , Failed: ${data.data.failed} , Changed: ${data.data.changed}`;
             } else {
-              // 如果有错误信息，显示错误信息；否则显示失败统计
-              const errorMsg = data.error || (data.data ? `Sync completed with ${data.data.failed} failures` : 'Sync failed, please try again');
-              showNotification('error', errorMsg);
-              syncBtn.disabled = false;
-              syncBtn.innerHTML = originalText;
+              message = data.error || 'Sync failed';
             }
+            
+            // 始终显示通知
+            showNotification('info', message);
+            
+            // 始终恢复按钮状态
+            syncBtn.disabled = false;
+            syncBtn.innerHTML = originalText;
           })
           .catch(error => {
             console.error('Sync error:', error);
-            showNotification('error', 'Network error, please check connection');
+            showNotification('info', 'Network error, please check connection');
             syncBtn.disabled = false;
             syncBtn.innerHTML = originalText;
           });
@@ -559,16 +676,14 @@
       icon.className = 'w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center';
       
       const iconInner = document.createElement('i');
-      iconInner.className = type === 'success' 
-        ? 'fa fa-check-circle text-xl text-blue-600'
-        : 'fa fa-exclamation-circle text-xl text-red-600';
+      iconInner.className = 'fa fa-info-circle text-xl text-blue-600';
       
       icon.appendChild(iconInner);
       
       // 标题
       const title = document.createElement('h3');
       title.className = 'text-base font-semibold text-gray-900';
-      title.textContent = type === 'success' ? 'Sync Successful' : 'Sync Failed';
+      title.textContent = 'Sync completed';
       
       titleArea.appendChild(icon);
       titleArea.appendChild(title);
@@ -604,10 +719,6 @@
         notification.style.opacity = '0';
         setTimeout(() => {
           overlay.remove();
-          // 成功后自动刷新页面
-          if (type === 'success') {
-            window.location.reload();
-          }
         }, 300);
       };
       buttonArea.appendChild(closeBtn);
@@ -625,10 +736,6 @@
         notification.style.opacity = '0';
         setTimeout(() => {
           overlay.remove();
-          // 成功后自动刷新页面
-          if (type === 'success') {
-            window.location.reload();
-          }
         }, 300);
       };
       
@@ -642,5 +749,4 @@
       };
     }
   </script>
-
 {% endblock %}

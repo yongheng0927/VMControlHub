@@ -13,8 +13,8 @@
 <div class="container mx-auto">
   <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-2">
     <div class="flex items-center space-x-2 text-sm text-gray-600">
-      <a href="{{ url_for('generic_crud.list_view', model_name=route_base) }}"
-         class="hover:text-primary transition-colors flex items-center">
+      <a href="{{ url_for('generic_crud.list_view', model_name=route_base) }}"  
+         class="hover:text-primary transition-colors flex items-center">        
         <i class="fa fa-list-ul mr-1"></i>
         {{ model_name }}
       </a>
@@ -137,6 +137,16 @@
             {% endfor %}
           </tbody>
         </table>
+        
+        <!-- 自定义信息区域 - 仅在hosts和vms页面显示 -->
+        {% if route_base in ['hosts', 'vms'] %}
+        <div id="custom-fields-section">
+          <table class="w-full border-collapse form-table">
+            <tbody id="custom-fields-form">
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
       </form>
     </div>
     
@@ -151,5 +161,14 @@
     </div>
   </div>
 </div>
+<script>
+  window.currentModelName = "{{ route_base }}";
+  window.csrfToken = "{{ csrf_token() }}";
+  window.customFieldsApiBase = "/api/{{ 'hosts' if route_base == 'hosts' else 'vms' }}/custom-fields";
+  window.editingItemId = {% if item %}{{ item.id }}{% else %}null{% endif %};
+</script>
 <script src="{{ url_for('static', filename='js/generic/form.js') }}"></script>
+{% if route_base in ['hosts', 'vms'] %}
+<script src="{{ url_for('static', filename='js/generic/custom-fields-form.js') }}"></script>
+{% endif %}
 {% endblock %}

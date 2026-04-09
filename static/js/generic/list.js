@@ -1,7 +1,7 @@
 let currentFilterField = null;
-let currentVisibleFields = window.currentVisibleFields || [];
-const defaultColumns = window.defaultColumns || [];
-const csrfToken = window.csrfToken || '';
+let currentVisibleFields = []; // 延迟初始化，在DOMContentLoaded中设置
+let defaultColumns = []; // 延迟初始化，在DOMContentLoaded中设置
+let csrfToken = ''; // 延迟初始化，在DOMContentLoaded中设置
 let selectedIds = new Set();
 
 // 提取通用 URL 参数更新函数
@@ -17,6 +17,10 @@ function updateUrlParams(modifier) {
 
 // 页面加载完成后绑定事件
 document.addEventListener('DOMContentLoaded', function() {
+  // 初始化全局变量
+  currentVisibleFields = window.currentVisibleFields || [];
+  defaultColumns = window.defaultColumns || [];
+  csrfToken = window.csrfToken || '';
   // 全局搜索
   const searchBtn = document.getElementById('search-btn');
   const globalSearchInput = document.getElementById('global-search');
@@ -124,11 +128,32 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   const bulkEditBtn = document.getElementById('bulk-edit-btn');
   if (bulkEditBtn) {
-    bulkEditBtn.addEventListener('click', () => openModal('bulk-edit-modal'));
+    bulkEditBtn.addEventListener('click', () => {
+      loadCustomFieldsForBulkEdit();
+      openModal('bulk-edit-modal');
+    });
   }
   const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
   if (bulkDeleteBtn) {
     bulkDeleteBtn.addEventListener('click', bulkDelete);
+  }
+  
+  // 导出按钮
+  const exportBtn = document.getElementById('export-data-btn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', function() {
+      // 构建导出URL，包含所有当前参数和 visible_columns
+      const urlParams = new URLSearchParams(window.location.search);
+      
+      // 添加 visible_columns 参数（如果有）
+      if (currentVisibleFields && currentVisibleFields.length > 0) {
+        urlParams.set('visible_columns', currentVisibleFields.join(','));
+      }
+      
+      // 构建完整的导出URL
+      const exportUrl = `/${window.currentModelName}/export-csv?${urlParams.toString()}`;
+      window.location.href = exportUrl;
+    });
   }
   
   // 批量编辑表单
@@ -141,96 +166,96 @@ document.addEventListener('DOMContentLoaded', function() {
     applyBulkEditBtn.addEventListener('click', applyBulkEdit);
   }
 
-// 导入数据功能
-const importBtn = document.getElementById('import-data-btn');
-if (importBtn) {
+  // 导入数据功能
+  const importBtn = document.getElementById('import-data-btn');
+  if (importBtn) {
     importBtn.addEventListener('click', () => {
-        // 动态填充必填字段
-        const requiredFieldsList = document.getElementById('required-fields-list');
-        requiredFieldsList.innerHTML = '';
-        
-        const requiredFieldLabels = window.formFields
-            .filter(field => field.required)
-            .map(field => field.label);
+      // 动态填充必填字段
+      const requiredFieldsList = document.getElementById('required-fields-list');
+      requiredFieldsList.innerHTML = '';
+      
+      const requiredFieldLabels = window.formFields
+          .filter(field => field.required)
+          .map(field => field.label);
 
-        if (requiredFieldLabels.length > 0) {
-            requiredFieldLabels.forEach(fieldLabel => {
-                const li = document.createElement('li');
-                li.textContent = fieldLabel;
-                requiredFieldsList.appendChild(li);
-            });
+      if (requiredFieldLabels.length > 0) {
+        requiredFieldLabels.forEach(fieldLabel => {
+          const li = document.createElement('li');
+          li.textContent = fieldLabel;
+          requiredFieldsList.appendChild(li);
+        });
+      } else {
+        requiredFieldsList.innerHTML = '<li>This model has no required fields.</li>';
+      }
+
+      // 打开模态框
+      openModal('import-modal');
+
+      // 在模态框打开后，再绑定其内部元素的事件
+      const confirmImportBtn = document.getElementById('confirm-import');
+      const fileInput = document.getElementById('import-file-input');
+      const feedbackDiv = document.getElementById('import-feedback');
+      const customUploadBtn = document.getElementById('custom-upload-btn');
+      const fileNameSpan = document.getElementById('file-name');
+
+      customUploadBtn.addEventListener('click', () => {
+        fileInput.click();
+      });
+
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) {
+          fileNameSpan.textContent = fileInput.files[0].name;
         } else {
-            requiredFieldsList.innerHTML = '<li>This model has no required fields.</li>';
+          fileNameSpan.textContent = 'No file chosen';
+        }
+        feedbackDiv.innerHTML = '';
+        if (confirmImportBtn) confirmImportBtn.disabled = false;
+      });
+
+      confirmImportBtn.addEventListener('click', () => {
+        const file = fileInput.files[0];
+        if (!file) {
+          feedbackDiv.innerHTML = '<span class="text-red-500">Please select a file first.</span>';
+          return;
         }
 
-        // 打开模态框
-        openModal('import-modal');
+        const formData = new FormData();
+        formData.append('file', file);
 
-        // 在模态框打开后，再绑定其内部元素的事件
-        const confirmImportBtn = document.getElementById('confirm-import');
-        const fileInput = document.getElementById('import-file-input');
-        const feedbackDiv = document.getElementById('import-feedback');
-        const customUploadBtn = document.getElementById('custom-upload-btn');
-        const fileNameSpan = document.getElementById('file-name');
+        confirmImportBtn.disabled = true;
+        confirmImportBtn.textContent = 'Importing...';
+        feedbackDiv.innerHTML = '<span class="text-blue-500">Uploading and processing file, please wait...</span>';
 
-        customUploadBtn.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length > 0) {
-                fileNameSpan.textContent = fileInput.files[0].name;
-            } else {
-                fileNameSpan.textContent = 'No file chosen';
+        fetch(`/api/${window.currentModelName}/import`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrfToken },
+          body: formData
+        })
+        .then(async response => {
+          const data = await response.json();
+          if (!response.ok) {
+            let errorHtml = `<span class="text-red-500">${data.error}</span>`;
+            if (data.details && Array.isArray(data.details)) {
+              errorHtml += '<ul class="list-disc list-inside mt-2 text-red-700">';
+              data.details.forEach(detail => { errorHtml += `<li>${detail}</li>`; });
+              errorHtml += '</ul>';
             }
-            feedbackDiv.innerHTML = '';
-            if (confirmImportBtn) confirmImportBtn.disabled = false;
+            feedbackDiv.innerHTML = errorHtml;
+          } else {
+            feedbackDiv.innerHTML = `<span class="text-green-500">${data.message}</span>`;
+            setTimeout(() => window.location.reload(), 1500);
+          }
+        })
+        .catch(error => {
+          feedbackDiv.innerHTML = `<span class="text-red-500">Unknown error: ${error.message}</span>`;
+        })
+        .finally(() => {
+          confirmImportBtn.disabled = false;
+          confirmImportBtn.textContent = 'Start Import';
         });
-
-        confirmImportBtn.addEventListener('click', () => {
-            const file = fileInput.files[0];
-            if (!file) {
-                feedbackDiv.innerHTML = '<span class="text-red-500">Please select a file first.</span>';
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            confirmImportBtn.disabled = true;
-            confirmImportBtn.textContent = 'Importing...';
-            feedbackDiv.innerHTML = '<span class="text-blue-500">Uploading and processing file, please wait...</span>';
-
-            fetch(`/api/${window.currentModelName}/import`, {
-                method: 'POST',
-                headers: { 'X-CSRFToken': window.csrfToken },
-                body: formData
-            })
-            .then(async response => {
-                const data = await response.json();
-                if (!response.ok) {
-                    let errorHtml = `<span class="text-red-500">${data.error}</span>`;
-                    if (data.details && Array.isArray(data.details)) {
-                        errorHtml += '<ul class="list-disc list-inside mt-2 text-red-700">';
-                        data.details.forEach(detail => { errorHtml += `<li>${detail}</li>`; });
-                        errorHtml += '</ul>';
-                    }
-                    feedbackDiv.innerHTML = errorHtml;
-                } else {
-                    feedbackDiv.innerHTML = `<span class="text-green-500">${data.message}</span>`;
-                    setTimeout(() => window.location.reload(), 1500);
-                }
-            })
-            .catch(error => {
-                feedbackDiv.innerHTML = `<span class="text-red-500">Unknown error: ${error.message}</span>`;
-            })
-            .finally(() => {
-                confirmImportBtn.disabled = false;
-                confirmImportBtn.textContent = 'Start Import';
-            });
-        });
+      });
     });
-}
+  }
   
   // 初始化批量操作栏状态
   updateBulkActionsBar();
@@ -383,6 +408,7 @@ function bulkDelete() {
     .then(handleFetchResponse)
     .then(() => {
       alert('Bulk delete successful');
+      clearSelection();
       window.location.reload();
     })
     .catch(err => alert(`Bulk delete failed: ${err.message}`));
@@ -458,6 +484,7 @@ function applyBulkEdit() {
   .then(handleFetchResponse)
   .then(() => {
     alert('Bulk edit successful');
+    clearSelection();
     window.location.reload();
   })
   .catch(err => alert(`Bulk edit failed: ${err.message}`));
@@ -693,3 +720,110 @@ function handleFetchResponse(response) {
   }
   return response.json();
 }
+
+// 全局变量，存储自定义字段配置
+window.customFields = [];
+
+// 加载自定义字段用于批量编辑
+function loadCustomFieldsForBulkEdit() {
+  // 仅对hosts和vms加载自定义字段
+  if (!['hosts', 'vms'].includes(window.currentModelName)) return;
+
+  const resourceType = window.currentModelName === 'hosts' ? 'host' : 'vm';
+  const apiUrl = `/api/${resourceType === 'host' ? 'hosts' : 'vms'}/custom-fields`;
+
+  fetch(apiUrl)
+    .then(handleFetchResponse)
+    .then(data => {
+      if (data && data.data) {
+        window.customFields = data.data;
+        updateBulkEditFieldDropdown();
+      }
+    })
+    .catch(err => console.error('Failed to load custom fields:', err));
+}
+
+// 更新批量编辑字段下拉选择器
+function updateBulkEditFieldDropdown() {
+  const select = document.getElementById('bulk-edit-field');
+  if (!select) return;
+
+  // 保存原有选项
+  const existingOptions = [];
+  for (let i = 0; i < select.options.length; i++) {
+    existingOptions.push({
+      value: select.options[i].value,
+      text: select.options[i].text,
+      isCustom: false
+    });
+  }
+
+  // 清空并重新构建
+  select.innerHTML = '';
+
+  // 添加原有选项（跳过原来的Custom Fields optgroup）
+  existingOptions.forEach(opt => {
+    if (!opt.text.startsWith('Custom Fields')) {
+      const option = document.createElement('option');
+      option.value = opt.value;
+      option.textContent = opt.text;
+      select.appendChild(option);
+    }
+  });
+
+  // 添加自定义字段（直接添加，不使用optgroup）
+  if (window.customFields && window.customFields.length > 0) {
+    // 按 sort 排序
+    const sortedCustomFields = [...window.customFields].sort((a, b) => (a.sort || 0) - (b.sort || 0));
+    sortedCustomFields.forEach(field => {
+      const option = document.createElement('option');
+      option.value = field.id;
+      option.textContent = field.field_name;
+      option.dataset.fieldType = field.field_type;
+      select.appendChild(option);
+    });
+  }
+}
+
+// 修改handleBulkEditFieldChange函数以支持自定义字段
+const originalHandleBulkEditFieldChange = handleBulkEditFieldChange;
+handleBulkEditFieldChange = function() {
+  const fieldName = this.value;
+  const container = document.getElementById('bulk-edit-value-container');
+  container.innerHTML = '';
+
+  if (!fieldName) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  // 检查是否是自定义字段
+  const customField = window.customFields.find(f => String(f.id) === String(fieldName));
+
+  if (customField) {
+    // 处理自定义字段
+    let inputHtml = '';
+    if (customField.field_type === 'int') {
+      inputHtml = `<input type="number" name="value" class="w-full px-3 py-2 border rounded-lg text-sm">`;
+    } else if (customField.field_type === 'varchar') {
+      inputHtml = `<input type="text" name="value" class="w-full px-3 py-2 border rounded-lg text-sm">`;
+    } else if (customField.field_type === 'datetime') {
+      inputHtml = `<input type="datetime-local" name="value" class="w-full px-3 py-2 border rounded-lg text-sm">`;
+    } else if (customField.field_type === 'enum') {
+      const enumOptions = customField.enum_options || [];
+      const options = enumOptions.map(opt => 
+        `<option value="${opt.option_key}">${opt.option_label}</option>`
+      ).join('');
+      inputHtml = `<select name="value" class="w-full px-3 py-2 border rounded-lg text-sm"><option value="">-- Select --</option>${options}</select>`;
+    } else {
+      inputHtml = `<input type="text" name="value" class="w-full px-3 py-2 border rounded-lg text-sm">`;
+    }
+
+    const label = `<label class="block text-sm font-medium text-gray-700 mb-1">New Value</label>`;
+    container.innerHTML = `${label}${inputHtml}`;
+    container.classList.remove('hidden');
+  } else {
+    // 使用原来的函数处理原生字段
+    originalHandleBulkEditFieldChange.call(this);
+  }
+};
