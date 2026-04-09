@@ -107,9 +107,13 @@ def change_password():
     try:
         user.set_password(new_password)
         user.must_change_password = False
+        # 记录登录时间
+        user.last_login = datetime.datetime.now()
         db.session.commit()
-        current_app.logger.info(f"Change password success: User ID {user_id} password changed successfully")
-        return jsonify({"message": "password changed successfully, please use new password to login"}), 200
+        # 自动登录用户
+        flask_login_user(user)
+        current_app.logger.info(f"Change password success: User ID {user_id} password changed successfully and logged in")
+        return jsonify({"message": "password changed successfully"}), 200
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Failed to change the password: {str(e)}")
@@ -154,9 +158,14 @@ def register_post():
         db.session.add(new_user)
         db.session.commit()
         
+        # 注册成功后直接登录
+        new_user.last_login = current_time
+        flask_login_user(new_user)
+        
         current_app.logger.info(f"Registration success: User {username} registered successfully, ID={new_user.id}")
         current_app.logger.info(f"Registration time: {current_time}")
-        return jsonify({"message": "registration success, please login"}), 201
+        current_app.logger.info(f"User {username} logged in automatically after registration")
+        return jsonify({"message": "registration success"}), 201
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Registration failed: {str(e)}")
