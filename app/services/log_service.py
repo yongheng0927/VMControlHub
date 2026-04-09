@@ -37,6 +37,60 @@ def to_dict(obj):
                 value = getattr(obj, c.key)
                 # 递归处理值
                 obj_dict[c.key] = to_dict(value)
+            
+            # 检查是否是Host或VM对象，如果是，添加自定义字段值
+            model_name = obj.__class__.__name__
+            if model_name in ['Host', 'VM']:
+                try:
+                    from app.models import CustomField, CustomFieldValue, CustomFieldEnumOption
+                    from app import db
+                    
+                    resource_type = 'host' if model_name == 'Host' else 'vm'
+                    
+                    # 获取所有有效的自定义字段配置
+                    custom_fields = CustomField.query.filter_by(
+                        resource_type=resource_type
+                    ).order_by(CustomField.sort).all()
+                    
+                    # 获取该资源的所有自定义字段值
+                    field_values = CustomFieldValue.query.filter_by(
+                        resource_id=obj.id
+                    ).all()
+                    
+                    # 创建字段值映射
+                    field_value_map = {fv.field_id: fv for fv in field_values}
+                    
+                    for field in custom_fields:
+                        field_value = field_value_map.get(field.id)
+                        # 使用field_name作为键，而不是field_key
+                        dict_key = field.field_name
+                        
+                        if field_value:
+                            if field.field_type == 'int':
+                                obj_dict[dict_key] = field_value.int_value
+                            elif field.field_type == 'varchar':
+                                obj_dict[dict_key] = field_value.varchar_value
+                            elif field.field_type == 'datetime':
+                                obj_dict[dict_key] = to_dict(field_value.datetime_value)
+                            elif field.field_type == 'enum':
+                                # 枚举类型返回显示名
+                                enum_opt = CustomFieldEnumOption.query.filter_by(
+                                    field_id=field.id,
+                                    option_key=field_value.enum_value
+                                ).first()
+                                if enum_opt:
+                                    obj_dict[dict_key] = enum_opt.option_label
+                                else:
+                                    obj_dict[dict_key] = field_value.enum_value
+                        else:
+                            # 如果没有值，根据字段类型设置默认值
+                            if field.default_value is not None:
+                                obj_dict[dict_key] = field.default_value
+                            else:
+                                obj_dict[dict_key] = None
+                except Exception as e:
+                    current_app.logger.error(f"Error adding custom fields to dict: {str(e)}")
+            
             return obj_dict
     except Exception as e:
         current_app.logger.error(f"Error converting SQLAlchemy object to dict: {str(e)}")

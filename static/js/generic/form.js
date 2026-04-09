@@ -103,7 +103,6 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
         
       } catch (err) {
-        console.error(err);
         showNotification('Save failed, please try again later', 'error');
         
         // 恢复按钮状态

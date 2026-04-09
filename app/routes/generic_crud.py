@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, url_for, session, redirect, flash, current_app, Response
 from flask_login import login_required
 from flask_sqlalchemy.pagination import Pagination
-from app.models import VM, Host, User, db, ChangeLog, OperationLog
+from app.models import VM, Host, User, db, ChangeLog, OperationLog, CustomField, CustomFieldEnumOption, CustomFieldValue
 from app.services.log_service import log_change, to_dict
 from app.services.permission_service import (
     role_required, admin_required, manager_or_admin_required,
@@ -13,7 +13,7 @@ import json
 import pytz
 from functools import wraps
 from datetime import datetime
-from sqlalchemy import or_, inspect, cast, String, func
+from sqlalchemy import or_, inspect, cast, String, func, case
 import csv
 import ipaddress
 import io
@@ -257,7 +257,7 @@ def require_model(f):
     return wrapper
 
 
-def get_query_data(config, include_pagination=True):
+def get_query_data(config, include_pagination=True, model_name=None):
     model = config['model']
     field_config = config['field_config']   
     sort = request.args.get('sort', config.get('default_sort', 'id'))
@@ -265,15 +265,135 @@ def get_query_data(config, include_pagination=True):
     search = request.args.get('search', '').strip()
     query = model.query
     
-    # 处理搜索
-    if search and config.get('search_fields'):
+    # 调试日志：查看所有请求参数
+    current_app.logger.info(f"=== get_query_data called ===")
+    current_app.logger.info(f"  model_name: {model_name}")
+    current_app.logger.info(f"  search term: '{search}'")
+    current_app.logger.info(f"  request args: {dict(request.args)}")
+    
+    # 过滤掉自定义字段,只保留数据库字段
+    db_field_config = [f for f in field_config if not f.get('custom', False)]
+    
+    # 处理搜索 - 包括自定义字段
+    if search:
         conditions = []
-        for field in config.get('search_fields', []):
-            column = getattr(model, field, None)
-            if column:
-                conditions.append(cast(column, String).ilike(f'{search}%'))
+        current_app.logger.info(f"Searching for: '{search}' in model: {model_name}")
+        
+        # 搜索原生字段
+        if config.get('search_fields'):
+            current_app.logger.info(f"Native search fields: {config.get('search_fields')}")
+            for field in config.get('search_fields', []):
+                column = getattr(model, field, None)
+                if column:
+                    try:
+                        conditions.append(cast(column, String).ilike(f'%{search}%'))
+                        current_app.logger.info(f"Adding native field search: {field}")
+                    except Exception as e:
+                        current_app.logger.warning(f"Could not search field {field}: {e}")
+                else:
+                    current_app.logger.warning(f"Field {field} not found on model {model}")
+        else:
+            current_app.logger.warning("No search_fields configured for this model")
+        
+        # 搜索自定义字段 - 仅对 vms 和 hosts
+        if model_name in ['vms', 'hosts']:
+            try:
+                from app.models import CustomFieldValue, CustomFieldEnumOption
+                resource_type = 'host' if model_name == 'hosts' else 'vm'
+                current_app.logger.info(f"=== Starting custom field search ===")
+                current_app.logger.info(f"  resource_type: {resource_type}")
+                current_app.logger.info(f"  search term: '{search}'")
+                
+                # 收集所有匹配的资源 ID
+                matching_resource_ids = set()
+                
+                # 首先查询所有自定义字段值，以便调试
+                all_custom_values = CustomFieldValue.query.filter(
+                    CustomFieldValue.resource_type == resource_type
+                ).all()
+                current_app.logger.info(f"  Total custom field values found: {len(all_custom_values)}")
+                for val in all_custom_values:
+                    current_app.logger.info(f"    CustomFieldValue: id={val.id}, field_id={val.field_id}, resource_id={val.resource_id}, "
+                                          f"varchar='{val.varchar_value}', int={val.int_value}, enum='{val.enum_value}', datetime={val.datetime_value}")
+                
+                # 1. 搜索非枚举类型的自定义字段值
+                current_app.logger.info(f"  Step 1: Searching non-enum fields")
+                non_enum_values = CustomFieldValue.query.filter(
+                    CustomFieldValue.resource_type == resource_type,
+                    or_(
+                        CustomFieldValue.varchar_value.ilike(f'%{search}%'),
+                        cast(CustomFieldValue.int_value, String).ilike(f'%{search}%'),
+                        cast(CustomFieldValue.datetime_value, String).ilike(f'%{search}%')
+                    )
+                ).all()
+                current_app.logger.info(f"  Non-enum matches found: {len(non_enum_values)}")
+                
+                for val in non_enum_values:
+                    matching_resource_ids.add(val.resource_id)
+                    current_app.logger.info(f"    Added match: resource_id={val.resource_id}")
+                
+                # 2. 搜索枚举类型的自定义字段值（直接匹配 enum_value）
+                current_app.logger.info(f"  Step 2: Searching enum values")
+                enum_values = CustomFieldValue.query.filter(
+                    CustomFieldValue.resource_type == resource_type,
+                    CustomFieldValue.enum_value.isnot(None),
+                    CustomFieldValue.enum_value.ilike(f'%{search}%')
+                ).all()
+                current_app.logger.info(f"  Enum value matches found: {len(enum_values)}")
+                
+                for val in enum_values:
+                    matching_resource_ids.add(val.resource_id)
+                    current_app.logger.info(f"    Added match: resource_id={val.resource_id}, enum_value={val.enum_value}")
+                
+                # 3. 搜索枚举类型的 option_label（通过关联表）
+                current_app.logger.info(f"  Step 3: Searching enum labels")
+                enum_options = CustomFieldEnumOption.query.filter(
+                    CustomFieldEnumOption.option_label.ilike(f'%{search}%')
+                ).all()
+                current_app.logger.info(f"  Enum label matches found: {len(enum_options)}")
+                
+                for opt in enum_options:
+                    current_app.logger.info(f"    Found enum option: field_id={opt.field_id}, option_key={opt.option_key}, option_label={opt.option_label}")
+                    # 找到使用这个 option 的所有资源
+                    opt_values = CustomFieldValue.query.filter(
+                        CustomFieldValue.resource_type == resource_type,
+                        CustomFieldValue.field_id == opt.field_id,
+                        CustomFieldValue.enum_value == opt.option_key
+                    ).all()
+                    current_app.logger.info(f"    Resources using this option: {len(opt_values)}")
+                    
+                    for val in opt_values:
+                        matching_resource_ids.add(val.resource_id)
+                        current_app.logger.info(f"    Added match: resource_id={val.resource_id}, label={opt.option_label}")
+                
+                # 如果有匹配的资源 ID，添加到条件中
+                current_app.logger.info(f"  Total matching resource IDs: {len(matching_resource_ids)}")
+                if matching_resource_ids:
+                    conditions.append(model.id.in_(list(matching_resource_ids)))
+                    current_app.logger.info(f"  Added custom field search condition with IDs: {list(matching_resource_ids)}")
+                else:
+                    current_app.logger.info("  No matching custom field values found")
+            except Exception as e:
+                current_app.logger.error(f"Could not search custom fields: {e}")
+                import traceback
+                current_app.logger.error(traceback.format_exc())
+        else:
+            current_app.logger.info(f"Model {model_name} not in ['vms', 'hosts'], skipping custom field search")
+        
+        # 应用所有搜索条件
         if conditions:
-            query = query.filter(or_(*conditions))
+            try:
+                query = query.filter(or_(*conditions))
+                current_app.logger.info(f"Total search conditions: {len(conditions)}")
+                current_app.logger.info(f"Query: {query}")
+            except Exception as e:
+                current_app.logger.error(f"Error applying search conditions: {e}")
+                import traceback
+                current_app.logger.error(traceback.format_exc())
+        else:
+            current_app.logger.warning("No search conditions were added")
+    else:
+        current_app.logger.info("No search term provided")
     
     # 处理过滤参数
     filter_mapping = {
@@ -285,7 +405,7 @@ def get_query_data(config, include_pagination=True):
         'visible_columns': None
     }
     
-    for field in field_config:
+    for field in db_field_config:
         if field.get('filterable', False):
             filter_mapping[field['db_field']] = field['db_field']
     
@@ -322,7 +442,7 @@ def get_query_data(config, include_pagination=True):
                         query = query.filter(column.ilike(f'{single_value}'))
     
     # 处理排序
-    valid_sort_fields = [f['db_field'] for f in field_config if f.get('sortable', False)]
+    valid_sort_fields = [f['db_field'] for f in db_field_config if f.get('sortable', False)]
     if sort in valid_sort_fields:
         sort_column = getattr(model, sort)
         if sort in ('vm_ip'):
@@ -373,8 +493,8 @@ def get_query_data(config, include_pagination=True):
         }
 
 
-def get_paginated_data(config, search_fields=None):
-    return get_query_data(config, include_pagination=True)
+def get_paginated_data(config, model_name=None, search_fields=None):
+    return get_query_data(config, include_pagination=True, model_name=model_name)
 
 
 def is_valid_ipv4(ip_str):
@@ -403,7 +523,13 @@ def list_view(config, model_name):
     else:
         visible_columns = config['default_columns']
 
-    valid_columns = [f['db_field'] for f in config['field_config']]
+    # 从新的custom_fields表中获取自定义字段（仅对vms/hosts）
+    custom_fields = {}
+    if model_name in ['vms', 'hosts']:
+        custom_fields = get_custom_fields_from_db(model_name)
+    all_field_config = merge_field_configs(config['field_config'], custom_fields)
+    
+    valid_columns = [f['db_field'] for f in all_field_config]
     visible_columns = [col for col in visible_columns if col in valid_columns]
     if not visible_columns:
         visible_columns = config['default_columns']
@@ -416,15 +542,12 @@ def list_view(config, model_name):
             if field['name'] == 'host_id':
                 field['options'] = host_options
 
-    query_data = get_paginated_data(
-        config,
-        search_fields=config.get('search_fields', [])
-    )
+    query_data = get_query_data(config, include_pagination=True, model_name=model_name)
 
-    visible_fields = [f for f in config['field_config'] if f['db_field'] in visible_columns]
+    visible_fields = [f for f in all_field_config if f['db_field'] in visible_columns]
     visible_fields.sort(key=lambda x: visible_columns.index(x['db_field']))
 
-    serializable_field_config = serialize_field_config(config['field_config'])
+    serializable_field_config = serialize_field_config(all_field_config)
     
     no_add = config.get('no_add', False)
     no_edit = config.get('no_edit', False)
@@ -448,7 +571,7 @@ def list_view(config, model_name):
         search=query_data['search'],
         sort_by=query_data['sort_by'],
         sort_order=query_data['sort_order'],
-        field_config=config['field_config'],
+        field_config=all_field_config,
         visible_fields=visible_fields,
         visible_columns=visible_columns,
         default_columns=config['default_columns'],
@@ -457,6 +580,7 @@ def list_view(config, model_name):
         route_base=route_base,
         active_page=active_page,
         user_settings=user_settings,
+        custom_fields=custom_fields,
         data_open=data_open,
         logs_open=logs_open,
         admin_open=admin_open,
@@ -579,25 +703,102 @@ def create_view(config, model_name):
             db.session.add(new_item)
             db.session.flush()
 
+            # 收集自定义字段数据用于日志
+            custom_fields_for_log = {}
+            custom_fields_data = []
+            if model_name in ['hosts', 'vms']:
+                resource_type = 'host' if model_name == 'hosts' else 'vm'
+                fields_config = get_resource_custom_fields(resource_type)
+                
+                for field_config in fields_config:
+                    field_id = field_config['id']
+                    field_name = f'custom_field_{field_id}'
+                    
+                    if field_name in data:
+                        field_value = data[field_name]
+                        
+                        field_data = {'field_id': field_id}
+                        
+                        # 同时收集用于日志的数据（使用 field_name 作为键）
+                        log_field_key = field_config['field_name']
+                        
+                        if field_config['field_type'] == 'int':
+                            if field_value and field_value.strip():
+                                field_data['int_value'] = int(field_value)
+                                custom_fields_for_log[log_field_key] = int(field_value)
+                            else:
+                                field_data['int_value'] = None
+                                custom_fields_for_log[log_field_key] = None
+                        elif field_config['field_type'] == 'varchar':
+                            field_data['varchar_value'] = field_value if field_value else None
+                            custom_fields_for_log[log_field_key] = field_value if field_value else None
+                        elif field_config['field_type'] == 'datetime':
+                            field_data['datetime_value'] = field_value.replace('T', ' ') if field_value else None
+                            custom_fields_for_log[log_field_key] = field_value if field_value else None
+                        elif field_config['field_type'] == 'enum':
+                            field_data['enum_value'] = field_value if field_value else None
+                            # 对于枚举，获取显示标签
+                            if field_value:
+                                enum_opt = CustomFieldEnumOption.query.filter_by(
+                                    field_id=field_id,
+                                    option_key=field_value
+                                ).first()
+                                custom_fields_for_log[log_field_key] = enum_opt.option_label if enum_opt else field_value
+                            else:
+                                custom_fields_for_log[log_field_key] = None
+                        
+                        custom_fields_data.append(field_data)
+                    else:
+                        pass
+            
+            # 保存自定义字段
+            if custom_fields_data and model_name in ['hosts', 'vms']:
+                resource_type = 'host' if model_name == 'hosts' else 'vm'
+                try:
+                    save_resource_custom_fields(resource_type, new_item.id, custom_fields_data)
+                except ValueError as ve:
+                    db.session.rollback()
+                    if request.is_json:
+                        return jsonify({
+                            'success': False,
+                            'message': str(ve)
+                        }), 400
+                    else:
+                        flash(str(ve), 'error')
+                        return render_template('generic/form.html',
+                                            model_name=config['model_name'],
+                                            form_fields=form_fields,
+                                            data=data,
+                                            route_base=config['route_base'],
+                                            active_page=config['route_base'])
+            
+            # 构建包含自定义字段的日志详情
             if model_name == 'vms':
                 identifier = getattr(new_item, 'vm_ip', str(new_item.id))
                 host = Host.query.get(new_item.host_id)
                 host_info = host.host_info
+                vm_details = to_dict(new_item)
+                # 手动添加自定义字段到日志
+                vm_details.update(custom_fields_for_log)
                 detail_with_host = {
-                    'vm_details': to_dict(new_item),
+                    'vm_details': vm_details,
                     'host_relation': {
                         'host_info': host_info
                     }                    
                 }
             elif model_name == 'hosts':
                 identifier = getattr(new_item, 'host_info', str(new_item.id))
-                detail_with_host = {'host_details': to_dict(new_item)}
+                host_details = to_dict(new_item)
+                # 手动添加自定义字段到日志
+                host_details.update(custom_fields_for_log)
+                detail_with_host = {'host_details': host_details}
             elif model_name == 'user':
                 identifier = getattr(new_item, 'username', str(new_item.id))
                 detail_with_host = to_dict(new_item)
             else:
                 identifier = getattr(new_item, 'host_info', getattr(new_item, 'vm_ip', new_item.id))
                 detail_with_host = to_dict(new_item)
+            
             log_change('created', model_name, identifier, detail_obj=detail_with_host)
             
             db.session.commit()
@@ -856,6 +1057,126 @@ def edit_view(config, model_name, id):
             item.updated_at = datetime.now(beijing_tz)
         
         try:
+            custom_fields_data = []
+            if model_name in ['hosts', 'vms']:
+                resource_type = 'host' if model_name == 'hosts' else 'vm'
+                fields_config = get_resource_custom_fields(resource_type)
+                
+                for field_config in fields_config:
+                    field_id = field_config['id']
+                    field_name = f'custom_field_{field_id}'
+                    
+                    if field_name in data:
+                        field_value = data[field_name]
+                        
+                        # 获取旧值用于比较
+                        old_field_value = CustomFieldValue.query.filter_by(
+                            field_id=field_id,
+                            resource_id=item.id
+                        ).first()
+                        
+                        old_value = None
+                        if old_field_value:
+                            if field_config['field_type'] == 'int':
+                                old_value = old_field_value.int_value
+                            elif field_config['field_type'] == 'varchar':
+                                old_value = old_field_value.varchar_value
+                            elif field_config['field_type'] == 'datetime':
+                                old_value = old_field_value.datetime_value
+                            elif field_config['field_type'] == 'enum':
+                                old_value = old_field_value.enum_value
+                        
+                        # 准备新值
+                        new_value = None
+                        field_data = {'field_id': field_id}
+                        
+                        if field_config['field_type'] == 'int':
+                            if field_value and field_value.strip():
+                                new_value = int(field_value)
+                                field_data['int_value'] = new_value
+                            else:
+                                field_data['int_value'] = None
+                        elif field_config['field_type'] == 'varchar':
+                            new_value = field_value if field_value else None
+                            field_data['varchar_value'] = new_value
+                        elif field_config['field_type'] == 'datetime':
+                            new_value = field_value.replace('T', ' ') if field_value else None
+                            field_data['datetime_value'] = new_value
+                        elif field_config['field_type'] == 'enum':
+                            new_value = field_value if field_value else None
+                            field_data['enum_value'] = new_value
+                        
+                        # 比较是否有变化
+                        value_changed = False
+                        if field_config['field_type'] == 'int':
+                            if old_value != new_value:
+                                value_changed = True
+                        elif field_config['field_type'] == 'varchar':
+                            if old_value != new_value:
+                                value_changed = True
+                        elif field_config['field_type'] == 'datetime':
+                            if old_value != new_value:
+                                value_changed = True
+                        elif field_config['field_type'] == 'enum':
+                            if old_value != new_value:
+                                value_changed = True
+                        
+                        if value_changed:
+                            custom_fields_data.append(field_data)
+                            
+                            # 获取显示名用于日志
+                            old_value_display = old_value
+                            new_value_display = new_value
+                            
+                            if field_config['field_type'] == 'enum':
+                                if old_value:
+                                    old_opt = CustomFieldEnumOption.query.filter_by(
+                                        field_id=field_id,
+                                        option_key=old_value
+                                    ).first()
+                                    if old_opt:
+                                        old_value_display = old_opt.option_label
+                                
+                                if new_value:
+                                    new_opt = CustomFieldEnumOption.query.filter_by(
+                                        field_id=field_id,
+                                        option_key=new_value
+                                    ).first()
+                                    if new_opt:
+                                        new_value_display = new_opt.option_label
+                            
+                            # 添加到变更日志
+                            changes.append({
+                                'field': field_config['field_name'],
+                                'old_value': old_value_display,
+                                'new_value': new_value_display
+                            })
+                        else:
+                            pass
+                    else:
+                        pass
+            
+            if custom_fields_data and model_name in ['hosts', 'vms']:
+                resource_type = 'host' if model_name == 'hosts' else 'vm'
+                try:
+                    save_resource_custom_fields(resource_type, item.id, custom_fields_data)
+                except ValueError as ve:
+                    db.session.rollback()
+                    if request.is_json:
+                        return jsonify({
+                            'success': False,
+                            'message': str(ve)
+                        }), 400
+                    else:
+                        flash(str(ve), 'error')
+                        return render_template('generic/form.html',
+                                            model_name=config['model_name'],
+                                            form_fields=form_fields,
+                                            data=data,
+                                            item=item,
+                                            route_base=config['route_base'],
+                                            active_page=config['route_base'])
+            
             # 只有有实际变更时才记录日志
             if changes:
                 # 确定标识符
@@ -1045,6 +1366,63 @@ def get_filter_options(config, model_name):
     if not field_name:
         return jsonify({'error': 'Field name is required'}), 400
 
+    # 检查是否是自定义字段
+    custom_fields = get_custom_fields_from_db(model_name)
+    if field_name in custom_fields:
+        # 从自定义字段值表中获取选项
+        resource_type = 'host' if model_name == 'hosts' else 'vm'
+        
+        # 获取该字段的配置
+        field_config = CustomField.query.filter_by(
+            resource_type=resource_type,
+            id=int(field_name)
+        ).first()
+        
+        if field_config:
+            # 获取该字段的所有值
+            query = db.session.query(CustomFieldValue).filter_by(
+                field_id=field_config.id
+            ).distinct()
+            
+            # 根据字段类型获取对应的值
+            if field_config.field_type == 'int':
+                values = db.session.query(CustomFieldValue.int_value).filter_by(
+                    field_id=field_config.id
+                ).filter(CustomFieldValue.int_value.isnot(None)).distinct().all()
+            elif field_config.field_type == 'varchar':
+                values = db.session.query(CustomFieldValue.varchar_value).filter_by(
+                    field_id=field_config.id
+                ).filter(CustomFieldValue.varchar_value.isnot(None)).distinct().all()
+            elif field_config.field_type == 'datetime':
+                values = db.session.query(CustomFieldValue.datetime_value).filter_by(
+                    field_id=field_config.id
+                ).filter(CustomFieldValue.datetime_value.isnot(None)).distinct().all()
+            elif field_config.field_type == 'enum':
+                # 对于枚举类型，返回配置的选项
+                enum_options = field_config.enum_options.order_by(CustomFieldEnumOption.sort).all()
+                
+                response_options = [{'value': opt.option_key, 'label': opt.option_label} for opt in enum_options]
+                return jsonify({'options': response_options})
+            else:
+                values = []
+            
+            response_options = []
+            for value_tuple in values:
+                value = value_tuple[0]
+                if value is None:
+                    continue
+                if field_config.field_type == 'datetime':
+                    label = value.strftime('%Y-%m-%d %H:%M:%S')
+                    response_options.append({'value': label, 'label': label})
+                else:
+                    response_options.append({'value': str(value), 'label': str(value)})
+            
+            # 排序并去重
+            response_options.sort(key=lambda x: x['label'])
+            unique_options = {opt['value']: opt for opt in response_options}.values()
+            
+            return jsonify({'options': list(unique_options)})
+
     model = config['model']
     column = getattr(model, field_name, None)
     if column is None:
@@ -1124,7 +1502,7 @@ def get_filter_options(config, model_name):
 
 
 # 2. 修改主查询逻辑，确保host_id过滤使用正确的关联条件
-def get_query_data(config, include_pagination=True):
+def get_query_data(config, model_name=None, include_pagination=True):
     model = config['model']
     field_config = config['field_config']   
     sort = request.args.get('sort', config.get('default_sort', 'id'))
@@ -1133,7 +1511,7 @@ def get_query_data(config, include_pagination=True):
     query = model.query
     
     # 处理搜索
-    if search and config.get('search_fields'):
+    if search and (config.get('search_fields') or model_name in ['vms', 'hosts']):
         conditions = []
         need_join_host = False
         for field in config.get('search_fields', []):
@@ -1145,6 +1523,50 @@ def get_query_data(config, include_pagination=True):
                 column = getattr(model, field, None)
                 if column:
                     conditions.append(cast(column, String).ilike(f'%{search}%'))
+        
+        # 处理自定义字段搜索
+        if model_name in ['vms', 'hosts']:
+            custom_fields = get_custom_fields_from_db(model_name)
+            for field_id_str, custom_field_config in custom_fields.items():
+                if custom_field_config.get('filterable', False):
+                    resource_type = 'host' if model_name == 'hosts' else 'vm'
+                    try:
+                        field_id = int(field_id_str)
+                    except ValueError:
+                        continue
+                    custom_field = CustomField.query.filter_by(
+                        resource_type=resource_type,
+                        id=field_id
+                    ).first()
+                    
+                    if custom_field:
+                        subquery = db.session.query(CustomFieldValue.resource_id).filter(
+                            CustomFieldValue.field_id == custom_field.id
+                        )
+                        
+                        if custom_field.field_type == 'int':
+                            try:
+                                search_int = int(search)
+                                subquery = subquery.filter(CustomFieldValue.int_value == search_int)
+                            except ValueError:
+                                continue
+                        elif custom_field.field_type == 'varchar':
+                            subquery = subquery.filter(CustomFieldValue.varchar_value.ilike(f'%{search}%'))
+                        elif custom_field.field_type == 'datetime':
+                            try:
+                                search_datetime = datetime.strptime(search, '%Y-%m-%d %H:%M:%S')
+                                subquery = subquery.filter(CustomFieldValue.datetime_value == search_datetime)
+                            except ValueError:
+                                try:
+                                    search_date = datetime.strptime(search, '%Y-%m-%d')
+                                    subquery = subquery.filter(CustomFieldValue.datetime_value.like(f'{search}%'))
+                                except ValueError:
+                                    continue
+                        elif custom_field.field_type == 'enum':
+                            subquery = subquery.filter(CustomFieldValue.enum_value.ilike(f'%{search}%'))
+                        
+                        conditions.append(model.id.in_(subquery))
+        
         if conditions:
             # 如果需要host条件，JOIN关联表
             if need_join_host:
@@ -1162,7 +1584,7 @@ def get_query_data(config, include_pagination=True):
     }
     
     for field in field_config:
-        if field.get('filterable', False):
+        if isinstance(field, dict) and field.get('filterable', False):
             filter_mapping[field['db_field']] = field['db_field']
     
     for param_name, field_name in filter_mapping.items():
@@ -1227,9 +1649,150 @@ def get_query_data(config, include_pagination=True):
                         else:
                             query = query.filter(column == single_value)
     
-    # 处理排序（保持不变）
+    # 处理自定义字段过滤
+    if model_name:
+        # 获取所有自定义字段
+        custom_fields = get_custom_fields_from_db(model_name)
+        
+        # 遍历所有请求参数，检查是否是自定义字段
+        for param_name, filter_value in request.args.items():
+            if param_name in custom_fields:
+                # 这是一个自定义字段，需要处理过滤
+                resource_type = 'host' if model_name == 'hosts' else 'vm'
+                
+                # 获取该字段的配置
+                try:
+                    field_id = int(param_name)
+                except ValueError:
+                    continue
+                custom_field = CustomField.query.filter_by(
+                    resource_type=resource_type,
+                    id=field_id
+                ).first()
+                
+                if custom_field:
+                    values = filter_value.split(',')
+                    has_null_check = False
+                    other_values = []
+                    
+                    for value in values:
+                        if value == '__NULL__':
+                            has_null_check = True
+                        else:
+                            other_values.append(value)
+                    
+                    # 构建子查询：找到匹配自定义字段值的资源ID
+                    subquery = db.session.query(CustomFieldValue.resource_id).filter(
+                        CustomFieldValue.field_id == custom_field.id
+                    )
+                    
+                    # 根据字段类型应用过滤条件
+                    if has_null_check or other_values:
+                        conditions = []
+                        
+                        if has_null_check:
+                            # 没有值的情况：资源不在自定义字段值表中
+                            exists_null = ~db.session.query(CustomFieldValue).filter(
+                                CustomFieldValue.field_id == custom_field.id,
+                                CustomFieldValue.resource_id == model.id
+                            ).exists()
+                            conditions.append(exists_null)
+                        
+                        if other_values:
+                            # 有值的情况：根据字段类型匹配
+                            if custom_field.field_type == 'int':
+                                try:
+                                    int_values = [int(v) for v in other_values]
+                                    conditions.append(CustomFieldValue.int_value.in_(int_values))
+                                except ValueError:
+                                    pass
+                            elif custom_field.field_type == 'varchar':
+                                conditions.append(CustomFieldValue.varchar_value.in_(other_values))
+                            elif custom_field.field_type == 'datetime':
+                                try:
+                                    datetime_values = [datetime.strptime(v, '%Y-%m-%d %H:%M:%S') for v in other_values]
+                                    conditions.append(CustomFieldValue.datetime_value.in_(datetime_values))
+                                except ValueError:
+                                    pass
+                            elif custom_field.field_type == 'enum':
+                                conditions.append(CustomFieldValue.enum_value.in_(other_values))
+                        
+                        if conditions:
+                            if len(conditions) > 1:
+                                subquery = subquery.filter(or_(*conditions))
+                            else:
+                                subquery = subquery.filter(conditions[0])
+                            
+                            # 应用主查询过滤：只返回匹配的资源
+                            query = query.filter(model.id.in_(subquery))
+    
+    # 处理排序（添加自定义字段支持）
     valid_sort_fields = [f['db_field'] for f in field_config if f.get('sortable', False)]
-    if sort in valid_sort_fields:
+    
+    # 检查是否是自定义字段排序
+    if model_name and sort not in valid_sort_fields:
+        custom_fields = get_custom_fields_from_db(model_name)
+        if sort in custom_fields:
+            # 这是一个自定义字段，需要通过自定义字段值表排序
+            resource_type = 'host' if model_name == 'hosts' else 'vm'
+            try:
+                field_id = int(sort)
+            except ValueError:
+                pass
+            else:
+                custom_field = CustomField.query.filter_by(
+                    resource_type=resource_type,
+                    id=field_id
+                ).first()
+            
+            if custom_field:
+                # 使用 LEFT JOIN 连接自定义字段值表
+                # 这里使用子查询方式实现按自定义字段排序
+                query = query.outerjoin(
+                    CustomFieldValue,
+                    (CustomFieldValue.field_id == custom_field.id) & 
+                    (CustomFieldValue.resource_id == model.id)
+                )
+                
+                # 根据字段类型选择排序字段
+                if custom_field.field_type == 'int':
+                    order_expr = CustomFieldValue.int_value
+                elif custom_field.field_type == 'varchar':
+                    order_expr = CustomFieldValue.varchar_value
+                elif custom_field.field_type == 'datetime':
+                    order_expr = CustomFieldValue.datetime_value
+                elif custom_field.field_type == 'enum':
+                    order_expr = CustomFieldValue.enum_value
+                else:
+                    order_expr = CustomFieldValue.id
+                
+                # 应用排序 - MySQL 不支持 nulls_last()/nulls_first()，使用 case when
+                if order.lower() == 'asc':
+                    # ASC: NULL 值放在最后
+                    nulls_last_case = case(
+                        (order_expr.is_(None), 1),
+                        else_=0
+                    )
+                    query = query.order_by(nulls_last_case, order_expr.asc())
+                else:
+                    # DESC: NULL 值放在最前
+                    nulls_first_case = case(
+                        (order_expr.is_(None), 0),
+                        else_=1
+                    )
+                    query = query.order_by(nulls_first_case, order_expr.desc())
+        elif sort in valid_sort_fields:
+            sort_column = getattr(model, sort)
+            if sort in ('vm_ip'):
+                order_expr = func.inet_aton(sort_column)
+            else:
+                order_expr = sort_column
+       
+            if order.lower() == 'asc':
+                query = query.order_by(order_expr.asc())
+            else:
+                query = query.order_by(order_expr.desc())
+    elif sort in valid_sort_fields:
         sort_column = getattr(model, sort)
         if sort in ('vm_ip'):
             order_expr = func.inet_aton(sort_column)
@@ -1294,7 +1857,10 @@ def save_table_settings(config, model_name):
     if not visible_columns:
         return jsonify({'success': False, 'message': 'Missing visible_columns in data'}), 400
     
-    valid_columns = [field['db_field'] for field in config['field_config']]
+    # 获取包含自定义字段的完整字段配置
+    custom_fields = get_custom_fields_from_db(model_name)
+    all_field_config = merge_field_configs(config['field_config'], custom_fields)
+    valid_columns = [field['db_field'] for field in all_field_config]
     visible_columns = [col for col in visible_columns if col in valid_columns]
     
     if not visible_columns:
@@ -1355,8 +1921,362 @@ def save_user_table_settings(user_id, model_name, settings):
         return False
 
 
+def get_resource_custom_fields(resource_type):
+    """获取指定资源类型的有效自定义字段配置"""
+    fields = CustomField.query.filter_by(
+        resource_type=resource_type
+    ).order_by(CustomField.sort).all()
+    
+    result = []
+    for field in fields:
+        field_dict = {
+            'id': field.id,
+            'resource_type': field.resource_type,
+            'field_name': field.field_name,
+            'field_type': field.field_type,
+            'field_length': field.field_length,
+            'is_required': field.is_required,
+            'default_value': field.default_value,
+            'sort': field.sort,
+            'create_time': field.create_time.isoformat() if field.create_time else None,
+            'update_time': field.update_time.isoformat() if field.update_time else None
+        }
+        
+        if field.field_type == 'enum':
+            enum_options = field.enum_options.order_by(CustomFieldEnumOption.sort).all()
+            field_dict['enum_options'] = [
+                {
+                    'id': opt.id,
+                    'option_key': opt.option_key,
+                    'option_label': opt.option_label,
+                    'sort': opt.sort
+                } for opt in enum_options
+            ]
+        
+        result.append(field_dict)
+    return result
+
+
+def get_resource_field_values(resource_type, resource_id):
+    """获取指定资源的自定义字段值"""
+    values = CustomFieldValue.query.filter_by(
+        resource_type=resource_type,
+        resource_id=resource_id
+    ).all()
+    
+    value_dict = {}
+    value_map = {}
+    
+    for val in values:
+        field = val.field
+        if not field:
+            continue
+        
+        if field.field_type == 'int':
+            field_value = val.int_value
+        elif field.field_type == 'varchar':
+            field_value = val.varchar_value
+        elif field.field_type == 'datetime':
+            field_value = val.datetime_value
+        elif field.field_type == 'enum':
+            enum_opt = CustomFieldEnumOption.query.filter_by(
+                field_id=field.id,
+                option_key=val.enum_value
+            ).first()
+            field_value = {
+                'key': val.enum_value,
+                'label': enum_opt.option_label if enum_opt else val.enum_value
+            }
+        else:
+            field_value = None
+        
+        value_dict[str(field.id)] = field_value
+        value_map[str(field.id)] = field_value
+    
+    return value_dict, value_map
+
+
+def save_resource_custom_fields(resource_type, resource_id, custom_fields_data):
+    """保存资源的自定义字段值"""
+    if not custom_fields_data:
+        return True
+    
+    fields_config = get_resource_custom_fields(resource_type)
+    fields_map = {f['id']: f for f in fields_config}
+    
+    for field_data in custom_fields_data:
+        field_id = field_data.get('field_id')
+        if field_id not in fields_map:
+            continue
+        
+        field_config = fields_map[field_id]
+        
+        # 检查必填字段
+        has_value = False
+        if field_config['is_required']:
+            if field_config['field_type'] == 'int' and 'int_value' in field_data and field_data['int_value'] is not None:
+                has_value = True
+            elif field_config['field_type'] == 'varchar' and 'varchar_value' in field_data and field_data['varchar_value']:
+                has_value = True
+            elif field_config['field_type'] == 'datetime' and 'datetime_value' in field_data and field_data['datetime_value']:
+                has_value = True
+            elif field_config['field_type'] == 'enum' and 'enum_value' in field_data and field_data['enum_value']:
+                has_value = True
+            
+            if not has_value:
+                raise ValueError(f"Field '{field_config['field_name']}' is required")
+        
+        # 验证枚举值
+        if field_config['field_type'] == 'enum' and 'enum_value' in field_data and field_data['enum_value']:
+            enum_options = field_config.get('enum_options', [])
+            valid_keys = [opt['option_key'] for opt in enum_options]
+            if field_data['enum_value'] not in valid_keys:
+                raise ValueError(f"Invalid value for field '{field_config['field_name']}'")
+        
+        # 获取或创建字段值记录
+        existing_value = CustomFieldValue.query.filter_by(
+            field_id=field_id,
+            resource_id=resource_id
+        ).first()
+        
+        if existing_value:
+            # 更新现有记录
+            if field_config['field_type'] == 'int':
+                existing_value.int_value = field_data.get('int_value')
+            elif field_config['field_type'] == 'varchar':
+                existing_value.varchar_value = field_data.get('varchar_value')
+            elif field_config['field_type'] == 'datetime':
+                dt_val = field_data.get('datetime_value')
+                if dt_val:
+                    if isinstance(dt_val, str):
+                        try:
+                            existing_value.datetime_value = datetime.strptime(dt_val, '%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            try:
+                                existing_value.datetime_value = datetime.strptime(dt_val, '%Y-%m-%d %H:%M')
+                            except ValueError:
+                                try:
+                                    existing_value.datetime_value = datetime.strptime(dt_val, '%Y-%m-%dT%H:%M')
+                                except ValueError:
+                                    existing_value.datetime_value = None
+                    else:
+                        existing_value.datetime_value = dt_val
+                else:
+                    existing_value.datetime_value = None
+            elif field_config['field_type'] == 'enum':
+                existing_value.enum_value = field_data.get('enum_value')
+        else:
+            # 创建新记录
+            new_value = CustomFieldValue(
+                field_id=field_id,
+                resource_type=resource_type,
+                resource_id=resource_id
+            )
+            if field_config['field_type'] == 'int':
+                new_value.int_value = field_data.get('int_value')
+            elif field_config['field_type'] == 'varchar':
+                new_value.varchar_value = field_data.get('varchar_value')
+            elif field_config['field_type'] == 'datetime':
+                dt_val = field_data.get('datetime_value')
+                if dt_val:
+                    if isinstance(dt_val, str):
+                        try:
+                            new_value.datetime_value = datetime.strptime(dt_val, '%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            try:
+                                new_value.datetime_value = datetime.strptime(dt_val, '%Y-%m-%d %H:%M')
+                            except ValueError:
+                                try:
+                                    new_value.datetime_value = datetime.strptime(dt_val, '%Y-%m-%dT%H:%M')
+                                except ValueError:
+                                    new_value.datetime_value = None
+                    else:
+                        new_value.datetime_value = dt_val
+            elif field_config['field_type'] == 'enum':
+                new_value.enum_value = field_data.get('enum_value')
+            db.session.add(new_value)
+    
+    # 更新 vms/hosts 表的 updated_at 字段
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    now = datetime.now(beijing_tz)
+    if resource_type == 'host':
+        host = Host.query.get(resource_id)
+        if host:
+            host.updated_at = now
+    elif resource_type == 'vm':
+        vm = VM.query.get(resource_id)
+        if vm:
+            vm.updated_at = now
+    
+    return True
+
+
 def serialize_field_config(field_config):
     return [{k: v for k, v in field.items() if k not in ['render', 'format']} for field in field_config]
+
+
+def get_custom_fields(model_name):
+    """获取所有用户的自定义字段配置(从所有用户中合并)"""
+    all_custom_fields = {}
+    
+    users = User.query.all()
+    for user in users:
+        if user.table_set and isinstance(user.table_set, dict):
+            user_custom_fields = user.table_set.get(f'{model_name}_custom_fields', {})
+            if user_custom_fields:
+                all_custom_fields.update(user_custom_fields)
+    
+    return all_custom_fields
+
+
+def get_custom_fields_from_db(model_name):
+    """从数据库的custom_fields表中获取自定义字段配置"""
+    from app.models import CustomField
+    
+    resource_type = 'host' if model_name == 'hosts' else 'vm'
+    
+    custom_fields = CustomField.query.filter_by(
+        resource_type=resource_type
+    ).order_by(CustomField.sort).all()
+    
+    field_config = {}
+    for field in custom_fields:
+        field_config[str(field.id)] = {
+            'label': field.field_name,
+            'sortable': True,
+            'filterable': True,
+            'default_visible': True
+        }
+    
+    return field_config
+
+
+def save_custom_fields(model_name, custom_fields):
+    """保存自定义字段配置到所有用户"""
+    try:
+        users = User.query.all()
+        for user in users:
+            if user.table_set and isinstance(user.table_set, dict):
+                current_settings = dict(user.table_set)
+                current_settings[f'{model_name}_custom_fields'] = custom_fields
+                user.table_set = current_settings
+        
+        db.session.commit()
+        return True
+    except Exception as e:
+        current_app.logger.error(f"Failed to save custom fields: {e}", exc_info=True)
+        db.session.rollback()
+        return False
+
+
+def get_user_custom_fields(user_id, model_name):
+    """获取单个用户的自定义字段配置"""
+    if not user_id:
+        return {}
+    
+    user = User.query.get(user_id)
+    if not user:
+        return {}
+    
+    if user.table_set and isinstance(user.table_set, dict):
+        return user.table_set.get(f'{model_name}_custom_fields', {})
+    
+    return {}
+
+
+def merge_field_configs(config, custom_fields):
+    """合并自定义字段到字段配置中"""
+    merged_config = [field.copy() for field in config]
+    
+    for field_name, field_config in custom_fields.items():
+        merged_config.append({
+            'db_field': field_name,
+            'label': field_config.get('label', field_name),
+            'sortable': field_config.get('sortable', False),
+            'filterable': field_config.get('filterable', False),
+            'default_visible': field_config.get('default_visible', False),
+            'custom': True
+        })
+    
+    return merged_config
+
+
+@generic_crud_bp.route('/<model_name>/api/add-custom-field', methods=['POST'])
+@login_required
+@require_model
+@admin_required
+def add_custom_field(config, model_name):
+    try:
+        data = request.get_json()
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Invalid JSON format'}), 400
+    
+    field_name = data.get('field_name', '').strip()
+    field_label = data.get('field_label', '').strip()
+    is_sortable = data.get('is_sortable', False)
+    is_filterable = data.get('is_filterable', False)
+    is_default_visible = data.get('is_default_visible', False)
+    
+    if not field_name or not field_label:
+        return jsonify({'success': False, 'message': 'Field name and label are required'}), 400
+    
+    valid_columns = [field['db_field'] for field in config['field_config']]
+    
+    if field_name in valid_columns:
+        return jsonify({'success': False, 'message': 'Field already exists in database'}), 400
+    
+    custom_fields = get_custom_fields(model_name)
+    
+    if field_name in custom_fields:
+        return jsonify({'success': False, 'message': 'Custom field already exists'}), 400
+    
+    custom_fields[field_name] = {
+        'label': field_label,
+        'sortable': is_sortable,
+        'filterable': is_filterable,
+        'default_visible': is_default_visible
+    }
+    
+    if save_custom_fields(model_name, custom_fields):
+        return jsonify({'success': True, 'message': 'Custom field added successfully', 'field': custom_fields[field_name]})
+    else:
+        return jsonify({'success': False, 'message': 'Failed to save custom field'}), 500
+
+
+@generic_crud_bp.route('/<model_name>/api/delete-custom-field', methods=['POST'])
+@login_required
+@require_model
+@admin_required
+def delete_custom_field(config, model_name):
+    try:
+        data = request.get_json()
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Invalid JSON format'}), 400
+    
+    field_name = data.get('field_name', '').strip()
+    
+    if not field_name:
+        return jsonify({'success': False, 'message': 'Field name is required'}), 400
+    
+    custom_fields = get_custom_fields(model_name)
+    
+    if field_name not in custom_fields:
+        return jsonify({'success': False, 'message': 'Custom field not found'}), 404
+    
+    del custom_fields[field_name]
+    
+    if save_custom_fields(model_name, custom_fields):
+        return jsonify({'success': True, 'message': 'Custom field deleted successfully'})
+    else:
+        return jsonify({'success': False, 'message': 'Failed to delete custom field'}), 500
+
+
+@generic_crud_bp.route('/<model_name>/api/get-custom-fields', methods=['GET'])
+@login_required
+@require_model
+def get_custom_fields_api(config, model_name):
+    custom_fields = get_custom_fields(model_name)
+    return jsonify({'success': True, 'custom_fields': custom_fields})
 
 
 @generic_crud_bp.route('/<model_name>/bulk-delete', methods=['POST'])
@@ -1477,8 +2397,21 @@ def bulk_edit_view(config, model_name):
     # 获取表单配置并验证字段
     form_fields = config.get('form_fields', [])
     field_config = next((f for f in form_fields if f['name'] == field_to_edit), None)
-
-    # 验证必填字段
+    
+    # 检查是否是自定义字段
+    resource_type = 'host' if model_name == 'hosts' else 'vm'
+    custom_field = None
+    if model_name in ['hosts', 'vms']:
+        try:
+            field_id = int(field_to_edit)
+            custom_field = CustomField.query.filter_by(
+                id=field_id,
+                resource_type=resource_type
+            ).first()
+        except ValueError:
+            pass
+    
+    # 验证必填字段（仅对原生字段）
     if field_config and field_config.get('required') and new_value in (None, '', ' '):
         # 获取需要编辑的项目以记录日志
         items_to_edit = model.query.filter(model.id.in_(ids_to_edit)).all()
@@ -1516,8 +2449,8 @@ def bulk_edit_view(config, model_name):
             }), 400
     
     # 验证字段是否允许编辑
-    if field_to_edit not in [f['name'] for f in form_fields]:
-        # 获取需要编辑的项目以记录日志
+    if not field_config and not custom_field:
+        # 既不是原生字段也不是自定义字段
         items_to_edit = model.query.filter(model.id.in_(ids_to_edit)).all()
         errors = {field_to_edit: 'Field not allowed for editing'}
         log_bulk_edit_errors(items_to_edit, model_name, field_to_edit, new_value, errors)
@@ -1529,6 +2462,130 @@ def bulk_edit_view(config, model_name):
         new_host_info = None
         new_host_id = None  # 初始化变量，避免未定义错误
         items_to_log = []  # 用于收集需要记录日志的项目
+
+        # 处理自定义字段的批量编辑
+        if custom_field:
+            from datetime import datetime
+            
+            for item in items_to_edit:
+                # 获取当前自定义字段的旧值
+                old_field_value = CustomFieldValue.query.filter_by(
+                    field_id=custom_field.id,
+                    resource_id=item.id
+                ).first()
+                
+                old_value = None
+                if old_field_value:
+                    if custom_field.field_type == 'int':
+                        old_value = old_field_value.int_value
+                    elif custom_field.field_type == 'varchar':
+                        old_value = old_field_value.varchar_value
+                    elif custom_field.field_type == 'datetime':
+                        old_value = old_field_value.datetime_value
+                    elif custom_field.field_type == 'enum':
+                        old_value = old_field_value.enum_value
+                
+                # 比较值是否有变化
+                value_changed = False
+                if custom_field.field_type == 'int':
+                    try:
+                        new_val_int = int(new_value) if new_value not in ('', None) else None
+                        if old_value != new_val_int:
+                            value_changed = True
+                    except (ValueError, TypeError):
+                        pass
+                elif custom_field.field_type == 'varchar':
+                    if old_value != new_value:
+                        value_changed = True
+                elif custom_field.field_type == 'datetime':
+                    if old_value != new_value:
+                        value_changed = True
+                elif custom_field.field_type == 'enum':
+                    if old_value != new_value:
+                        value_changed = True
+                
+                if not value_changed:
+                    continue
+                
+                # 构建变更日志
+                # 获取旧值的显示名（用于日志）
+                old_value_display = old_value
+                if custom_field.field_type == 'enum' and old_value:
+                    old_opt = CustomFieldEnumOption.query.filter_by(
+                        field_id=custom_field.id,
+                        option_key=old_value
+                    ).first()
+                    if old_opt:
+                        old_value_display = old_opt.option_label
+                
+                # 获取新值的显示名（用于日志）
+                new_value_display = new_value
+                if custom_field.field_type == 'enum' and new_value:
+                    new_opt = CustomFieldEnumOption.query.filter_by(
+                        field_id=custom_field.id,
+                        option_key=new_value
+                    ).first()
+                    if new_opt:
+                        new_value_display = new_opt.option_label
+                
+                detail_log = {
+                    'changes': [{
+                        'field': custom_field.field_name,
+                        'old_value': old_value_display,
+                        'new_value': new_value_display
+                    }]
+                }
+                
+                items_to_log.append((item, detail_log))
+            
+            # 执行自定义字段的更新
+            for item, detail_log in items_to_log:
+                # 更新或创建自定义字段值
+                field_value = CustomFieldValue.query.filter_by(
+                    field_id=custom_field.id,
+                    resource_id=item.id
+                ).first()
+                
+                if not field_value:
+                    field_value = CustomFieldValue(
+                        field_id=custom_field.id, 
+                        resource_id=item.id,
+                        resource_type=resource_type
+                    )
+                    db.session.add(field_value)
+                
+                # 根据字段类型设置值
+                if custom_field.field_type == 'int':
+                    try:
+                        field_value.int_value = int(new_value) if new_value not in ('', None) else None
+                    except (ValueError, TypeError):
+                        field_value.int_value = None
+                elif custom_field.field_type == 'varchar':
+                    field_value.varchar_value = new_value
+                elif custom_field.field_type == 'datetime':
+                    if new_value:
+                        try:
+                            field_value.datetime_value = datetime.strptime(new_value, '%Y-%m-%dT%H:%M')
+                        except (ValueError, TypeError):
+                            field_value.datetime_value = None
+                    else:
+                        field_value.datetime_value = None
+                elif custom_field.field_type == 'enum':
+                    field_value.enum_value = new_value
+            
+            db.session.commit()
+            
+            # 记录日志
+            for item, detail_log in items_to_log:
+                if model_name == 'vms':
+                    identifier = getattr(item, 'vm_ip', str(item.id))
+                elif model_name == 'hosts':
+                    identifier = getattr(item, 'host_info', str(item.id))
+                else:
+                    identifier = str(item.id)
+                log_change('updated', model_name, identifier, status='success', detail_obj=detail_log)
+            
+            return jsonify({'success': True, 'message': 'Bulk edit successful'})
 
         # 处理host_id特殊逻辑（仅当编辑字段为host_id时）
         if model_name == 'vms' and field_to_edit == 'host_id' and new_value:
@@ -1685,6 +2742,19 @@ def import_data_view(config, model_name):
     label_to_name_map = {field['label']: field['name'] for field in form_fields}
     required_labels = {field['label'] for field in form_fields if field.get('required')}
 
+    # 获取自定义字段配置
+    resource_type = None
+    if model_name == 'hosts':
+        resource_type = 'host'
+    elif model_name == 'vms':
+        resource_type = 'vm'
+    
+    custom_fields_config = []
+    custom_fields_name_to_config_map = {}
+    if resource_type:
+        custom_fields_config = get_resource_custom_fields(resource_type)
+        custom_fields_name_to_config_map = {f['field_name']: f for f in custom_fields_config}
+
     try:
         stream = file.stream.read().decode('utf-8-sig')
         csv_data = list(csv.DictReader(stream.splitlines()))
@@ -1713,6 +2783,7 @@ def import_data_view(config, model_name):
 
         # 暂存成功日志，待事务提交后再记录
         success_logs = []
+        custom_fields_to_save = []  # 保存自定义字段值
 
         for i, row in enumerate(csv_data, start=2):
             if unique_field_label:
@@ -1804,12 +2875,43 @@ def import_data_view(config, model_name):
                 elif model_name == 'hosts':
                     existing_hosts_info.add(row[unique_field_label])
 
+            # 处理自定义字段
+            row_custom_fields = []
+            for label, val in row.items():
+                if label in custom_fields_name_to_config_map:
+                    field_config = custom_fields_name_to_config_map[label]
+                    
+                    # 处理值
+                    processed_value = val
+                    if processed_value is None or processed_value == '' or processed_value == 'None':
+                        processed_value = None
+                    
+                    row_custom_fields.append({
+                        'field_config': field_config,
+                        'value': processed_value
+                    })
+            
+            # 保存自定义字段值到临时列表，待事务提交后处理
+            if row_custom_fields:
+                custom_fields_to_save.append({
+                    'resource_id': new_item.id,
+                    'fields': row_custom_fields
+                })
+
             # 准备日志数据（暂存，不立即记录）
             log_item_data = item_data.copy()
             if model_name == 'vms' and 'host_id' in log_item_data:
                 host = Host.query.get(log_item_data['host_id'])
                 if host:
                     log_item_data['host_info'] = host.host_info
+            
+            # 添加自定义字段到日志数据
+            if row_custom_fields:
+                log_item_data['custom_fields'] = {}
+                for field_data in row_custom_fields:
+                    field_config = field_data['field_config']
+                    value = field_data['value']
+                    log_item_data['custom_fields'][field_config['field_name']] = value
             
             if model_name == 'hosts':
                 identifier = getattr(new_item, 'host_info', str(new_item.id))
@@ -1827,6 +2929,55 @@ def import_data_view(config, model_name):
             })
 
         # 所有行处理完成，提交事务
+        db.session.commit()
+        
+        # 保存自定义字段值
+        for custom_field_data in custom_fields_to_save:
+            resource_id = custom_field_data['resource_id']
+            for field_data in custom_field_data['fields']:
+                field_config = field_data['field_config']
+                value = field_data['value']
+                
+                # 查找或创建自定义字段值
+                field_value = CustomFieldValue.query.filter_by(
+                    field_id=field_config['id'],
+                    resource_id=resource_id
+                ).first()
+                
+                if not field_value:
+                    field_value = CustomFieldValue(
+                        field_id=field_config['id'],
+                        resource_id=resource_id,
+                        resource_type=resource_type
+                    )
+                    db.session.add(field_value)
+                
+                # 根据字段类型设置值
+                if field_config['field_type'] == 'int':
+                    try:
+                        field_value.int_value = int(value) if value not in ('', None) else None
+                    except (ValueError, TypeError):
+                        field_value.int_value = None
+                elif field_config['field_type'] == 'varchar':
+                    field_value.varchar_value = value
+                elif field_config['field_type'] == 'datetime':
+                    if value:
+                        try:
+                            field_value.datetime_value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+                        except (ValueError, TypeError):
+                            field_value.datetime_value = None
+                    else:
+                        field_value.datetime_value = None
+                elif field_config['field_type'] == 'enum':
+                    # 查找对应的 enum option
+                    enum_opt = None
+                    if value:
+                        enum_opt = CustomFieldEnumOption.query.filter_by(
+                            field_id=field_config['id'],
+                            option_label=value
+                        ).first()
+                    field_value.enum_value = enum_opt.option_key if enum_opt else None
+        
         db.session.commit()
         
         # 事务提交成功后，批量记录成功日志
@@ -1869,25 +3020,91 @@ def export_csv_view(config, model_name):
     else:
         visible_columns = config['default_columns']
     
-    valid_columns = [f['db_field'] for f in config['field_config']]
+    # 获取自定义字段配置（使用新的 get_resource_custom_fields）
+    resource_type = None
+    if model_name == 'hosts':
+        resource_type = 'host'
+    elif model_name == 'vms':
+        resource_type = 'vm'
+    
+    custom_fields_from_db = []
+    if resource_type:
+        custom_fields_from_db = get_resource_custom_fields(resource_type)
+    
+    # 把自定义字段转换为 merge_field_configs 需要的格式
+    custom_fields_dict = {}
+    for field in custom_fields_from_db:
+        custom_fields_dict[str(field['id'])] = {
+            'label': field['field_name'],
+            'sortable': False,
+            'filterable': False,
+            'default_visible': True
+        }
+    
+    all_field_config = merge_field_configs(config['field_config'], custom_fields_dict)
+    
+    valid_columns = [f['db_field'] for f in all_field_config]
     visible_columns = [col for col in visible_columns if col in valid_columns]
     if not visible_columns:
         visible_columns = config['default_columns']
     
-    visible_fields = [f for f in config['field_config'] if f['db_field'] in visible_columns]
+    visible_fields = [f for f in all_field_config if f['db_field'] in visible_columns]
     visible_fields.sort(key=lambda x: visible_columns.index(x['db_field']))
     
     query_data = get_query_data(config, include_pagination=False)
     items = query_data['items']
     
+    custom_fields_config = custom_fields_from_db
+    custom_fields_id_map = {}
+    if resource_type:
+        custom_fields_id_map = {f['id']: f for f in custom_fields_config}
+    
+    all_custom_field_values = {}
+    if resource_type:
+        resource_ids = [item.id for item in items]
+        if resource_ids:
+            all_values = CustomFieldValue.query.filter(
+                CustomFieldValue.resource_type == resource_type,
+                CustomFieldValue.resource_id.in_(resource_ids)
+            ).all()
+            for val in all_values:
+                if val.resource_id not in all_custom_field_values:
+                    all_custom_field_values[val.resource_id] = {}
+                field = custom_fields_id_map.get(val.field_id)
+                if field:
+                    if field['field_type'] == 'int':
+                        field_value = val.int_value
+                    elif field['field_type'] == 'varchar':
+                        field_value = val.varchar_value
+                    elif field['field_type'] == 'datetime':
+                        field_value = val.datetime_value
+                    elif field['field_type'] == 'enum':
+                        enum_opt = CustomFieldEnumOption.query.filter_by(
+                            field_id=val.field_id,
+                            option_key=val.enum_value
+                        ).first()
+                        field_value = enum_opt.option_label if enum_opt else val.enum_value
+                    else:
+                        field_value = None
+                    all_custom_field_values[val.resource_id][str(field['id'])] = field_value
+    
+    final_visible_fields = []
+    for field in visible_fields:
+        final_visible_fields.append(field)
+    
     si = io.StringIO()
     si.write('\ufeff')
     writer = csv.writer(si)
     
-    header_row = [field['label'] for field in visible_fields]
+    header_row = []
+    for field in final_visible_fields:
+        if field.get('custom') and field['db_field'] in [str(f['id']) for f in custom_fields_config]:
+            field_config = next((f for f in custom_fields_config if str(f['id']) == field['db_field']), None)
+            header_row.append(field_config['field_name'] if field_config else field['label'])
+        else:
+            header_row.append(field['label'])
     writer.writerow(header_row)
     
-    # 预加载所有主机信息以提高性能
     host_map = {}
     if model_name == 'vms':
         host_ids = [getattr(item, 'host_id', None) for item in items if getattr(item, 'host_id', None)]
@@ -1897,9 +3114,11 @@ def export_csv_view(config, model_name):
     
     for item in items:
         row = []
-        for field in visible_fields:
-            # 特殊处理 host_id 字段，显示 host_info 而不是 host_id
-            if model_name == 'vms' and field['db_field'] == 'host_id':
+        item_custom_values = all_custom_field_values.get(item.id, {})
+        for field in final_visible_fields:
+            if field.get('custom') and field['db_field'] in item_custom_values:
+                value = item_custom_values[field['db_field']]
+            elif model_name == 'vms' and field['db_field'] == 'host_id':
                 host_id = getattr(item, 'host_id', None)
                 if host_id and host_id in host_map:
                     value = host_map[host_id]
@@ -1954,7 +3173,7 @@ def sync_vm_status_api():
         
         return jsonify({
             'success': True,
-            'message': f"同步完成！成功：{result.get('success', 0)}, 失败：{result.get('failed', 0)}, 变化：{result.get('changed', 0)}",
+            'message': f"Sync completed. Success: {result.get('success', 0)}, failed: {result.get('failed', 0)}, changed: {result.get('changed', 0)}",
             'data': {
                 'total': result.get('total', 0),
                 'success': result.get('success', 0),
