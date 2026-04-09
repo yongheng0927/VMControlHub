@@ -1,15 +1,11 @@
 services:
   mysql:
-    build:
-      context: .
-      dockerfile: ./conf/mysql/Dockerfile
-    image: vmcontrol-mysql-8.0.36:v1.0.0
+    image: vmcontrolhub/mysql:8.4.8-v2.0.0
     container_name: vmcontrolhub-mysql
     volumes:
       - mysql-data:/var/lib/mysql
-      - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
     environment:
-      MYSQL_ROOT_PASSWORD: "root-vmcontrolhub-mysql"    # 可以更改为任何字符串，实际使用时请更改为安全的密码.
+      MYSQL_ROOT_PASSWORD: "root-vmcontrolhub-mysql"
       TZ: Asia/Shanghai
     restart: always
     healthcheck:
@@ -19,16 +15,11 @@ services:
       retries: 5
       start_period: 30s
 
-
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: vmcontrol-app:v1.0.0
+    image: vmcontrolhub/app:python-3.10-slim-v2.0.0
     container_name: vmcontrolhub-app
     volumes:
       - ssh-data:/home/vmcontrolhub/.ssh
-      - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
       - static-data:/home/vmcontrolhub/static
     environment:
       TZ: Asia/Shanghai
@@ -37,23 +28,32 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   nginx:
-    image: nginx:1.24-alpine
+    image: vmcontrolhub/nginx:1.24-alpine-v2.0.0
     container_name: vmcontrolhub-nginx
     ports:
-    - "80:80"
+      - "${NGINX_HOST_PORT:-80}:80"
     volumes:
-    - ./conf/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
-    - static-data:/home/vmcontrolhub/static
-    - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
+      - static-data:/home/vmcontrolhub/static
     environment:
       TZ: Asia/Shanghai
     restart: always
     depends_on:
-      - app
-
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
 
 volumes:
   mysql-data:
