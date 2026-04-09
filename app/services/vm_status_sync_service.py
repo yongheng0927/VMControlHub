@@ -868,39 +868,3 @@ class VMStatusSyncService:
                 'error': str(e),
                 'vm_ip': vm.vm_ip
             }
-
-
-def sync_vm_status_task():
-    """
-    定时任务：同步所有 VM 的状态
-    每天凌晨 00:05 自动执行一次
-    """
-    from app import scheduler
-    from flask import _app_ctx_stack
-    
-    # 获取当前应用上下文，如果不存在则使用 scheduler 的应用
-    app = None
-    if _app_ctx_stack.top:
-        app = _app_ctx_stack.top.app
-    else:
-        # 从 scheduler 获取应用实例
-        app = scheduler.app
-    
-    with app.app_context():
-        try:
-            ssh_user = get_ssh_user()
-            if not ssh_user:
-                current_app.logger.warning("SSH_USER not configured, skipping scheduled VM status sync")
-                return
-            
-            sync_service = VMStatusSyncService(ssh_user)
-            result = sync_service.sync_all_vms()
-            
-            current_app.logger.info(
-                f"Scheduled VM status sync completed: "
-                f"total={result['total']}, success={result['success']}, "
-                f"failed={result['failed']}, changed={result['changed']}, "
-                f"unchanged={result['unchanged']}"
-            )
-        except Exception as e:
-            current_app.logger.error(f"Scheduled VM status sync failed: {e}", exc_info=True)
