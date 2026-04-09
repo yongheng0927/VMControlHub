@@ -20,10 +20,10 @@ CREATE TABLE IF NOT EXISTS `users` (
 
 CREATE TABLE IF NOT EXISTS `hosts` (
     `id` INT AUTO_INCREMENT PRIMARY KEY COMMENT '主机id,自增主键',
-    `host_info` VARCHAR(255) NOT NULL COMMENT '主机标识,格式为"ipv4_xxx"',
+    `host_info` VARCHAR(255) NOT NULL COMMENT '主机标识,格式为"ipv4_hostname"',
     `virtualization_type` ENUM('kvm', 'pve', 'other') NOT NULL COMMENT '虚拟化类型,决定管理方式',
     `department` VARCHAR(100) NOT NULL COMMENT '所属部门,用于权限和统计',
-    `status` ENUM('running', 'stopped', 'unknown') NOT NULL DEFAULT 'running' COMMENT '主机状态,running表示运行中,stopped表示已停止,unknown表示未知',
+    `status` ENUM('running', 'stopped', 'unknown') NOT NULL DEFAULT 'unknown' COMMENT '主机状态,running表示运行中,stopped表示已停止,unknown表示未知',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间,自动维护',
     `vm_count` INT NOT NULL DEFAULT 0 COMMENT '宿主机关联的VM数量',
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS `vms` (
     `os_type` VARCHAR(100) NOT NULL COMMENT '操作系统类型',
     `vm_user` VARCHAR(100) NOT NULL COMMENT '虚拟机登录用户名',
     `host_id` INT NOT NULL COMMENT '所属宿主机ID,关联hosts表的id',
-    `status` ENUM('running', 'stopped', 'unknown') NOT NULL DEFAULT 'running' COMMENT '虚拟机状态,running表示运行中,stopped表示已停止,unknown表示未知',
+    `status` ENUM('running', 'stopped', 'unknown') NOT NULL DEFAULT 'unknown' COMMENT '虚拟机状态,running表示运行中,stopped表示已停止,unknown表示未知',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间,自动维护',
     UNIQUE INDEX `idx_vms_vm_ip` (`vm_ip`) COMMENT '虚拟机IP唯一索引',
@@ -94,20 +94,65 @@ CREATE TABLE IF NOT EXISTS `operation_logs` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '日志ID,自增主键',
     `time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
     `username` VARCHAR(255) NOT NULL COMMENT '执行操作的用户名(保留历史值)',
-    `vm_ip` VARCHAR(15) NOT NULL COMMENT '操作的虚拟机IP(保留历史值)',  -- 即使VM删除也保留IP
+    `vm_ip` VARCHAR(15) NOT NULL COMMENT '操作的虚拟机IP(保留历史值)',
     `action` ENUM('start', 'shutdown', 'reboot') NOT NULL COMMENT '操作类型',
     `status` ENUM('success', 'failed') NOT NULL COMMENT '操作状态',
     `details` JSON NULL COMMENT '操作详情或错误信息'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='虚拟机操作日志表';
 
+-- 自定义字段配置表
+CREATE TABLE IF NOT EXISTS `custom_fields` (
+  `id` INT NOT NULL AUTO_INCREMENT COMMENT '字段唯一主键ID',
+  `resource_type` VARCHAR(16) NOT NULL COMMENT '资源类型,仅允许host/vm,host=宿主机,vm=虚拟机',
+  `field_name` VARCHAR(255) NOT NULL COMMENT '字段前端显示名称,支持用户重命名',
+  `field_type` VARCHAR(16) NOT NULL COMMENT '字段数据类型,仅允许int/varchar/datetime/enum',
+  `field_length` INT NULL DEFAULT 255 COMMENT '字段长度限制,仅varchar类型生效',
+  `is_required` TINYINT NOT NULL DEFAULT 0 COMMENT '是否必填,1=必填,0=选填',
+  `default_value` VARCHAR(255) NULL COMMENT '字段默认值,按field_type对应类型解析',
+  `sort` INT NOT NULL DEFAULT 0 COMMENT '前端表单/列表的展示排序,数字越小越靠前',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '字段创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '字段最后更新时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_resource_type` (`resource_type`) COMMENT '资源类型查询索引'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自定义字段配置表';
+
+-- 自定义字段枚举选项表
+CREATE TABLE IF NOT EXISTS `custom_field_enum_options` (
+  `id` INT NOT NULL AUTO_INCREMENT COMMENT '枚举选项唯一主键ID',
+  `field_id` INT NOT NULL COMMENT '关联custom_fields表的主键id,仅关联field_type=enum的字段',
+  `option_key` VARCHAR(255) NOT NULL COMMENT '枚举选项存储值,创建后不可修改',
+  `option_label` VARCHAR(255) NOT NULL COMMENT '枚举选项前端显示名称,支持修改',
+  `sort` INT NOT NULL DEFAULT 0 COMMENT '下拉选项展示排序,数字越小越靠前',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '选项创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '选项最后更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_field_option_key` (`field_id`, `option_key`) COMMENT '同字段下option_key唯一',
+  INDEX `idx_field_id` (`field_id`) COMMENT '字段ID查询索引',
+  CONSTRAINT `fk_enum_field_id` FOREIGN KEY (`field_id`) REFERENCES `custom_fields` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自定义字段枚举选项表';
+
+-- 自定义字段值表
+CREATE TABLE IF NOT EXISTS `custom_field_values` (
+  `id` INT NOT NULL AUTO_INCREMENT COMMENT '值记录唯一主键ID',
+  `field_id` INT NOT NULL COMMENT '关联custom_fields表的主键id',
+  `resource_type` VARCHAR(16) NOT NULL COMMENT '资源类型,host=宿主机,vm=虚拟机,和关联字段配置保持一致',
+  `resource_id` INT NOT NULL COMMENT '关联的宿主机ID(hosts.id)或虚拟机ID(vms.id)',
+  `int_value` BIGINT NULL COMMENT '存储int类型的字段值',
+  `varchar_value` VARCHAR(255) NULL COMMENT '存储varchar类型的字段值',
+  `datetime_value` DATETIME NULL COMMENT '存储datetime类型的字段值',
+  `enum_value` VARCHAR(255) NULL COMMENT '存储enum类型的字段值,对应枚举选项的option_key',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '值最后更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_field_resource` (`field_id`, `resource_id`) COMMENT '一个资源的一个字段仅存一条值',
+  INDEX `idx_resource` (`resource_type`, `resource_id`) COMMENT '资源类型+资源ID联合查询索引',
+  CONSTRAINT `fk_value_field_id` FOREIGN KEY (`field_id`) REFERENCES `custom_fields` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自定义字段值表';
 
 -- 插入默认管理员用户 - 使用明文密码admin,初次登录必须修改
 INSERT INTO `users` (`username`, `temp_password`, `role`, `must_change_password`, `password_last_changed`)
 VALUES ('admin', 'admin', 'admin', TRUE, NULL);
 
-
 -- 创建应用用户并分配所有权限
--- 修改密码时请同步更新.env中的数据库配置
-CREATE USER IF NOT EXISTS 'mysql_user'@'%' IDENTIFIED BY '123456';
-GRANT ALL PRIVILEGES ON `vmcontrolhub`.* TO 'mysql_user'@'%';
+CREATE USER IF NOT EXISTS 'vmcontrolhub'@'%' IDENTIFIED BY 'vmcontrolhub';
+GRANT ALL PRIVILEGES ON `vmcontrolhub`.* TO 'vmcontrolhub'@'%';
 FLUSH PRIVILEGES;
