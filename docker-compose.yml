@@ -1,12 +1,14 @@
 services:
   mysql:
-    image: vmcontrolhub/mysql:8.4.8-v2.0.0
+    image: mysql:8.4.8
     container_name: vmcontrolhub-mysql
     volumes:
+      - ./mysql-init:/docker-entrypoint-initdb.d
       - mysql-data:/var/lib/mysql
     environment:
-      MYSQL_ROOT_PASSWORD: "root-vmcontrolhub-mysql"
       TZ: Asia/Shanghai
+    env_file:
+      - env/mysql.env
     restart: always
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
@@ -16,14 +18,16 @@ services:
       start_period: 30s
 
   app:
-    image: vmcontrolhub/app:python-3.10-slim-v2.0.0
+    image: vmcontrolhub/app:v2.0.0
+    ports:
+      - 5000:5000
     container_name: vmcontrolhub-app
     volumes:
       - ssh-data:/home/vmcontrolhub/.ssh
-      - static-data:/home/vmcontrolhub/static
     environment:
       TZ: Asia/Shanghai
-      SSH_KEY_FILE: /home/vmcontrolhub/.ssh/id_rsa
+    env_file:
+      - env/vmcontrolhub.env
     restart: always
     depends_on:
       mysql:
@@ -35,27 +39,6 @@ services:
       retries: 5
       start_period: 30s
 
-  nginx:
-    image: vmcontrolhub/nginx:1.24-alpine-v2.0.0
-    container_name: vmcontrolhub-nginx
-    ports:
-      - "${NGINX_HOST_PORT:-80}:80"
-    volumes:
-      - static-data:/home/vmcontrolhub/static
-    environment:
-      TZ: Asia/Shanghai
-    restart: always
-    depends_on:
-      app:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
-
 volumes:
   mysql-data:
   ssh-data:
-  static-data:
