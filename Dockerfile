@@ -17,14 +17,10 @@ USER vmcontrolhub
 
 VOLUME ["/home/vmcontrolhub/.ssh"]
 
-COPY --chown=vmcontrolhub:vmcontrolhub  requirements.txt docker-entrypoint.sh .env gunicorn_config.py run.py ./
+COPY --chown=vmcontrolhub:vmcontrolhub  .  .
 
 RUN pip install -r requirements.txt
 
-COPY --chown=vmcontrolhub:vmcontrolhub static ./static/
-
-COPY --chown=vmcontrolhub:vmcontrolhub app ./app/
-
 ENV PATH="/home/vmcontrolhub/.local/bin:${PATH}"
 
-ENTRYPOINT ["/home/vmcontrolhub/docker-entrypoint.sh"]
+ENTRYPOINT ["bash", "/home/vmcontrolhub/docker-entrypoint.sh"]
