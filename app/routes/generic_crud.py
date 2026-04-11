@@ -3211,5 +3211,5 @@ def reset_user_password(config, model_name):
 
     db.session.commit()
     
-    flash(f'Password for user {user.username} has been successfully reset. You must change your password at next login.', 'success')
+    flash(f'Password for user {user.username} has been successfully reset. {user.username} must change their password at next login.', 'success')
     return redirect(url_for('generic_crud.list_view', model_name=model_name))
