@@ -281,3 +281,22 @@ class CustomFieldValue(db.Model):
 
     def __repr__(self):
         return f"<CustomFieldValue field_id={self.field_id} resource_id={self.resource_id}>"
+
+
+def delete_orphan_custom_field_values(mapper, connection, target):
+    """删除关联的自定义字段值（当 host 或 vm 被删除时）"""
+    from app.models import CustomFieldValue
+    
+    resource_type = 'vm' if isinstance(target, VM) else 'host'
+    resource_id = target.id
+    
+    CustomFieldValue.query.filter_by(
+        resource_type=resource_type,
+        resource_id=resource_id
+    ).delete()
+
+
+from sqlalchemy import event
+
+event.listen(Host, 'after_delete', delete_orphan_custom_field_values)
+event.listen(VM, 'after_delete', delete_orphan_custom_field_values)
