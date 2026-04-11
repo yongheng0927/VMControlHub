@@ -6,14 +6,14 @@ class SecretConfig:
     SECRET_KEY = os.environ.get('SECRET_KEY')
 
 class MysqlConfig:
-    MYSQL_DB_USER = os.environ.get('MYSQL_DB_USER')
-    MYSQL_DB_PORT = os.environ.get('MYSQL_DB_PORT')
-    MYSQL_DB_NAME = os.environ.get('MYSQL_DB_NAME')
-    MYSQL_DB_HOST = os.environ.get('MYSQL_DB_HOST')
-    MYSQL_DB_PASSWORD = os.environ.get('MYSQL_DB_PASSWORD')
+    MYSQL_USER = os.environ.get('MYSQL_USER')
+    MYSQL_DATABASE_PORT = os.environ.get('MYSQL_DATABASE_PORT')
+    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE')
+    MYSQL_DATABASE_HOST = os.environ.get('MYSQL_DATABASE_HOST')
+    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD')
     SQLALCHEMY_DATABASE_URI = (
-    f"mysql+pymysql://{MYSQL_DB_USER}:{MYSQL_DB_PASSWORD}"
-    f"@{MYSQL_DB_HOST}:{MYSQL_DB_PORT}/{MYSQL_DB_NAME}"
+    f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
+    f"@{MYSQL_DATABASE_HOST}:{MYSQL_DATABASE_PORT}/{MYSQL_DATABASE}"
     "?charset=utf8mb4"
     )
     SQLALCHEMY_ENGINE_OPTIONS = {
