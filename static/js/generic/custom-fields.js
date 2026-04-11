@@ -1,6 +1,7 @@
 let customFields = [];
 let editingFieldId = null;
 let isDeleting = false; // 防止重复删除标志
+let needsPageRefresh = false; // 标记是否需要在关闭弹窗时刷新页面
 
 document.addEventListener('DOMContentLoaded', function() {
   initCustomFields();
@@ -275,9 +276,9 @@ function saveField() {
   .then(handleFetchResponse)
   .then(data => {
     alert(data.message || 'Field saved successfully');
-    closeModal('custom-field-form-modal');
-    // 刷新整个页面以显示最新变化
-    window.location.reload();
+    needsPageRefresh = true; // 标记需要刷新页面
+    loadCustomFields(); // 只刷新列表，不关闭弹窗
+    resetFieldForm(); // 重置表单，为添加下一个做准备
   })
   .catch(err => {
     console.error('Failed to save field:', err);
@@ -306,8 +307,8 @@ function deleteField(fieldId) {
   .then(data => {
     alert(data.message || 'Field deleted successfully');
     isDeleting = false;
-    // 刷新整个页面以显示最新变化
-    window.location.reload();
+    needsPageRefresh = true; // 标记需要刷新页面
+    loadCustomFields(); // 只刷新列表，不关闭弹窗
   })
   .catch(err => {
     console.error('Failed to delete field:', err);
@@ -341,7 +342,15 @@ function closeModal(id) {
 
   content.classList.remove('scale-100', 'opacity-100');
   content.classList.add('scale-95', 'opacity-0');
-  setTimeout(() => modal.classList.add('hidden'), 300);
+  
+  setTimeout(() => {
+    modal.classList.add('hidden');
+    
+    // 如果是关闭自定义字段设置弹窗且需要刷新页面，则刷新
+    if (id === 'custom-field-settings-modal' && needsPageRefresh) {
+      window.location.reload();
+    }
+  }, 300);
 }
 
 function handleFetchResponse(response) {
