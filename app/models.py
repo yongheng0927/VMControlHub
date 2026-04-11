@@ -15,7 +15,7 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(255), nullable=True, comment='密码哈希值,存储加密后的密码')
     temp_password = db.Column(db.String(255), nullable=True, comment='临时明文密码(仅用于首次登录)')
     role = db.Column(ENUM('admin', 'manager', 'operator', name='role_enum'), nullable=False, server_default='operator', comment='用户角色,控制权限范围')
-    must_change_password = db.Column(db.Boolean, nullable=False, server_default='1', comment='密码重置标志,首次登录强制修改密码')
+    must_change_password = db.Column(db.Integer, nullable=False, server_default='1', comment='密码重置标志,首次登录强制修改密码')
     created_at = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), comment='用户创建时间')
     last_login = db.Column(db.DateTime, nullable=True, comment='最后登录时间')
     password_last_changed = db.Column(db.DateTime, nullable=True, comment='最后密码修改时间')
