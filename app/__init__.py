@@ -1,17 +1,14 @@
-# app/__init__.py
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import os
-from flask import Flask, redirect, url_for, jsonify
+from flask import Flask, redirect, url_for, jsonify, request
 from app.models import db, User
 from app.config import MysqlConfig, SecretConfig
 from flask_wtf import CSRFProtect
 from flask_login import LoginManager
-import datetime
-import sys
+from werkzeug.middleware.proxy_fix import ProxyFix
 import time
 
 
@@ -21,8 +18,13 @@ csrf = CSRFProtect()
 # 记录应用启动时间
 APP_START_TIME = time.time()
 
+def get_real_ip(request):
+    # 读取X-Real-IP头，若存在则返回，否则返回远程地址
+    proxy_ip = request.headers.get('X-Real-IP')
+    if proxy_ip:
+        return proxy_ip.strip() 
+    return request.remote_addr
 
-# 蓝图
 from app.routes.auth import auth_bp
 from app.routes.dashboard import dashboard_bp
 from app.routes.generic_crud import generic_crud_bp
@@ -43,17 +45,21 @@ def create_app():
         template_folder=template_path
     )
     
-    # 加载配置
     app.config.from_object(MysqlConfig)
     app.config.from_object(SecretConfig)
 
-    # 初始化扩展
     db.init_app(app)
     login_manager.init_app(app)
     csrf.init_app(app)
-    
 
-    # 未登录访问需要登录的路由时，重定向到哪个 endpoint
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1
+    )
+
+    # 登录配置
     login_manager.login_view = 'auth.login_page'
     login_manager.login_message = "Please login first to access this page"
     login_manager.login_message_category = "warning"
@@ -70,7 +76,7 @@ def create_app():
     def index():
         return redirect(url_for('dashboard.index'))
 
-    # 自定义Jinja2过滤器
+    # 自定义过滤器
     def omit_filter(d, *keys_to_omit):
         if not isinstance(d, dict):
             return d
@@ -80,7 +86,6 @@ def create_app():
 
     return app
 
-# flask-login: user_loader 回调
 @login_manager.user_loader
 def load_user(user_id):
     try:
