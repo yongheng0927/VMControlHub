@@ -42,8 +42,10 @@ class User(db.Model, UserMixin):
 class Host(db.Model):
     __tablename__ = 'hosts'
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='主机id,自增主键')
-    host_info = db.Column(db.String(255), unique=True, nullable=False, comment='主机标识,格式为"ipv4_hostname"')
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='主机 id,自增主键')
+    host_ipaddress = db.Column(db.String(255), unique=True, nullable=False, comment='主机 IP 地址，唯一标识')
+    ssh_port = db.Column(db.Integer, nullable=False, server_default='22', comment='SSH 端口，默认 22')
+    host_info = db.Column(db.String(255), unique=True, nullable=False, comment='主机标识，格式为"ipv4_hostname"')
     virtualization_type = db.Column(ENUM('kvm', 'pve', 'other', name='virtualization_enum'), nullable=False, comment='虚拟化类型,决定管理方式')
     department = db.Column(db.String(100), nullable=False, comment='所属部门,用于权限和统计')
     status = db.Column(ENUM('running', 'stopped', 'unknown', name='host_status_enum'), nullable=False, server_default='unknown', comment='主机状态')
@@ -224,12 +226,12 @@ class CustomField(db.Model):
     resource_type = db.Column(db.String(16), nullable=False, comment='资源类型，仅允许host/vm')
     field_name = db.Column(db.String(255), nullable=False, comment='字段前端显示名称')
     field_type = db.Column(db.String(16), nullable=False, comment='字段数据类型：int/varchar/datetime/enum')
-    field_length = db.Column(db.Integer, default=255, comment='字段长度限制，仅varchar生效')
-    is_required = db.Column(db.SmallInteger, nullable=False, default=0, comment='是否必填，1=必填，0=选填')
+    field_length = db.Column(db.Integer, server_default='255', comment='字段长度限制，仅varchar生效')
+    is_required = db.Column(db.SmallInteger, nullable=False, server_default='0', comment='是否必填，1=必填，0=选填')
     default_value = db.Column(db.String(255), nullable=True, comment='字段默认值')
-    sort = db.Column(db.Integer, nullable=False, default=0, comment='前端展示排序')
-    create_time = db.Column(db.DateTime, nullable=False, default=func.current_timestamp(), comment='创建时间')
-    update_time = db.Column(db.DateTime, nullable=False, default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间')
+    sort = db.Column(db.Integer, nullable=False, server_default='0', comment='前端展示排序')
+    create_time = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), comment='创建时间')
+    update_time = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间')
 
     # 关联枚举选项：删除字段时自动级联删除关联枚举
     enum_options = db.relationship(
@@ -258,9 +260,9 @@ class CustomFieldEnumOption(db.Model):
     field_id = db.Column(db.Integer, db.ForeignKey('custom_fields.id', ondelete='CASCADE'), nullable=False, comment='关联的字段ID')
     option_key = db.Column(db.String(255), nullable=False, comment='枚举选项存储值')
     option_label = db.Column(db.String(255), nullable=False, comment='枚举选项前端显示名')
-    sort = db.Column(db.Integer, nullable=False, default=0, comment='选项排序')
-    create_time = db.Column(db.DateTime, nullable=False, default=func.current_timestamp(), comment='创建时间')
-    update_time = db.Column(db.DateTime, nullable=False, default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间')
+    sort = db.Column(db.Integer, nullable=False, server_default='0', comment='选项排序')
+    create_time = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), comment='创建时间')
+    update_time = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间')
 
     def __repr__(self):
         return f"<CustomFieldEnumOption {self.option_label}>"
@@ -277,7 +279,7 @@ class CustomFieldValue(db.Model):
     varchar_value = db.Column(db.String(255), nullable=True, comment='varchar类型值')
     datetime_value = db.Column(db.DateTime, nullable=True, comment='datetime类型值')
     enum_value = db.Column(db.String(255), nullable=True, comment='enum类型值')
-    update_time = db.Column(db.DateTime, nullable=False, default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间')
+    update_time = db.Column(db.DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间')
 
     def __repr__(self):
         return f"<CustomFieldValue field_id={self.field_id} resource_id={self.resource_id}>"
