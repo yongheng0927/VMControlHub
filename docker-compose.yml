@@ -3,13 +3,11 @@ services:
     image: mysql:8.4.8
     container_name: vmcontrolhub-mysql
     volumes:
-      - ./mysql-init:/docker-entrypoint-initdb.d
       - mysql-data:/var/lib/mysql
-    environment:
-      TZ: Asia/Shanghai
     env_file:
       - env/mysql.env
-    restart: always
+      - env/timezone.env
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s
@@ -17,24 +15,43 @@ services:
       retries: 5
       start_period: 30s
 
+  redis:
+    image: valkey/valkey:9.0-alpine
+    container_name: vmcontrolhub-redis
+    env_file:
+      - env/redis.env
+      - env/timezone.env
+    command:
+      - sh
+      - -c
+      - valkey-server --requirepass $$REDIS_PASSWORD
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "$$REDIS_PASSWORD", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   app:
-    image: vmcontrolhub/app:v2.0.0
+    image: ${APP_IMAGE}
     ports:
       - 5000:5000
     container_name: vmcontrolhub-app
     volumes:
       - ssh-data:/home/vmcontrolhub/.ssh
-    environment:
-      TZ: Asia/Shanghai
     env_file:
+      - env/timezone.env
       - env/vmcontrolhub.env
-    restart: always
+    restart: unless-stopped
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 10s
+      interval: 60s
       timeout: 10s
       retries: 5
       start_period: 30s
