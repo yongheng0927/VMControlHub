@@ -9,6 +9,7 @@ from app.services.permission_service import (
 )
 from app.services.vm_status_sync_service import VMStatusSyncService
 from app.utils.ssh_helper import get_ssh_user
+# 缓存服务导入在使用时动态导入，避免循环依赖
 import json
 import pytz
 from functools import wraps
@@ -68,12 +69,13 @@ MODEL_CONFIG = {
             {'db_field': 'os_type', 'label': 'OS TYPE', 'sortable': True, 'filterable': True},
             {'db_field': 'domain_name', 'label': 'DOMAIN NAME', 'sortable': True, 'filterable': True},
             {'db_field': 'status','label': 'STATUS','sortable': True, 'filterable': True},
+            {'db_field': 'host_id', 'label': 'HOST ID', 'sortable': True, 'filterable': True},
             {
-                'db_field': 'host_id',
+                'db_field': 'host_info',
                 'label': 'HOST INFO',
                 'sortable': True,
                 'filterable': True,
-                'render': lambda item: f'<a href="/hosts/list?id={item.host_id}" class="text-primary hover:underline">{item.host.host_info if item.host else item.host_id}</a>'
+                'render': lambda item: f'<a href="/hosts/list?id={item.host_id}" class="text-primary hover:underline">{item.host_info if hasattr(item, "host_info") and item.host_info else item.host_id}</a>'
             },
             {'db_field': 'cpus', 'label': 'CPUS', 'sortable': True, 'filterable': True, },
             {'db_field': 'memory_gb', 'label': 'MEMORY(GB)', 'sortable': True, 'filterable': True,},
@@ -81,8 +83,8 @@ MODEL_CONFIG = {
             {'db_field': 'created_at', 'label': 'CREATED AT', 'sortable': True, 'filterable': True},
             {'db_field': 'updated_at', 'label': 'UPDATED AT', 'sortable': True, 'filterable': True}
         ],
-        'default_columns': [ 'vm_ip', 'vm_user', 'os_type', 'status', 'host_id', 'domain_name',],
-        'search_fields': ['vm_ip', 'vm_user', 'os_type', 'status', 'host_id', 'cpus', 'memory_gb', 'disk_gb', 'domain_name', 'created_at', 'updated_at'],
+        'default_columns': [ 'vm_ip', 'vm_user', 'os_type', 'status', 'host_info', 'domain_name',],
+        'search_fields': ['vm_ip', 'vm_user', 'os_type', 'status', 'host_info', 'host_id', 'cpus', 'memory_gb', 'disk_gb', 'domain_name', 'created_at', 'updated_at'],
         'model_name': 'VMs',
         'route_base': 'vms',
         'form_fields': [
@@ -102,6 +104,8 @@ MODEL_CONFIG = {
         'model': Host,
         'field_config': [
             {'db_field': 'id', 'label': 'ID', 'sortable': True, 'filterable': True},
+            {'db_field': 'host_ipaddress', 'label': 'IP ADDRESS', 'sortable': True, 'filterable': True},
+            {'db_field': 'ssh_port', 'label': 'SSH PORT', 'sortable': True, 'filterable': True},
             {'db_field': 'host_info', 'label': 'HOST INFO', 'sortable': True, 'filterable': True},
             {
                 'db_field': 'vm_count',
@@ -116,11 +120,13 @@ MODEL_CONFIG = {
             {'db_field': 'created_at', 'label': 'CREATED AT', 'sortable': True, 'filterable': True},
             {'db_field': 'updated_at', 'label': 'UPDATED AT', 'sortable': True, 'filterable': True},
         ],
-        'default_columns': ['host_info', 'status', 'department', 'virtualization_type', 'vm_count'],
-        'search_fields': ['id', 'host_info', 'status', 'department', 'virtualization_type', 'vm_count', 'created_at', 'updated_at'],
+        'default_columns': ['host_info', 'host_ipaddress', 'ssh_port', 'status', 'department', 'virtualization_type', 'vm_count'],
+        'search_fields': ['id', 'host_info', 'host_ipaddress', 'ssh_port', 'status', 'department', 'virtualization_type', 'vm_count', 'created_at', 'updated_at'],
         'model_name': 'Hosts',
         'route_base': 'hosts',
         'form_fields': [
+            {'name': 'host_ipaddress', 'label': 'IP ADDRESS', 'type': 'text', 'required': True},
+            {'name': 'ssh_port', 'label': 'SSH PORT', 'type': 'number', 'required': True},
             {'name': 'host_info', 'label': 'HOST INFO', 'type': 'text', 'required': True},
             {'name': 'department', 'label': 'DEPARTMENT', 'type': 'text', 'required': True},
             {'name': 'status', 'label': 'STATUS', 'type': 'select', 'options': ['running', 'stopped', 'unknown'], 'required': True},
@@ -149,7 +155,7 @@ MODEL_CONFIG = {
                  f'<button class="details-button text-white bg-blue-500 hover:bg-blue-600 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-xs px-3 py-1.5">View</button>'
                  f'<div class="details-content hidden relative mt-2">'
                  f'    <button class="close-details-button absolute top-0 right-0 p-1 text-gray-500 hover:text-gray-800 text-lg leading-none">&times;</button>'
-                 f'    <pre class="text-xs w-full overflow-x-auto bg-gray-100 p-2 rounded">{json.dumps(item.detail, ensure_ascii=False, indent=2)}</pre>'
+                 f'    <pre class="text-xs w-full overflow-x-auto bg-gray-100 p-2 rounded">{json.dumps(item.detail.to_dict() if hasattr(item.detail, "to_dict") else item.detail, ensure_ascii=False, indent=2)}</pre>'
                  f'</div>'
                  '</div>'
              ) if item.detail else ''
@@ -184,14 +190,14 @@ MODEL_CONFIG = {
                  f'<button class="details-button text-white bg-blue-500 hover:bg-blue-600 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-xs px-3 py-1.5">View</button>'
                  f'<div class="details-content hidden relative mt-2">'
                  f'    <button class="close-details-button absolute top-0 right-0 p-1 text-gray-500 hover:text-gray-800 text-lg leading-none">&times;</button>'
-                 f'    <pre class="text-xs w-full overflow-x-auto bg-gray-100 p-2 rounded">{json.dumps(item.details, ensure_ascii=False, indent=2)}</pre>'
+                 f'    <pre class="text-xs w-full overflow-x-auto bg-gray-100 p-2 rounded">{json.dumps(item.details._data if hasattr(item.details, "_data") else item.details if isinstance(item.details, dict) else str(item.details), ensure_ascii=False, indent=2)}</pre>'
                  f'</div>'
                  '</div>'
              ) if item.details else ''
             }
         ],
         'default_columns': ['time', 'vm_ip', 'username', 'action', 'status', 'duration_seconds', 'details'],
-        'search_fields': ['action', 'status'],
+        'search_fields': ['username', 'vm_ip', 'action', 'status'],
         'model_name': 'Operation_logs',
         'route_base': 'operation_logs',
         'form_fields': [],
@@ -257,244 +263,278 @@ def require_model(f):
     return wrapper
 
 
-def get_query_data(config, include_pagination=True, model_name=None):
-    model = config['model']
-    field_config = config['field_config']   
+def query_key_builder(config, model_name=None, include_pagination=True):
+    """生成查询缓存的键"""
     sort = request.args.get('sort', config.get('default_sort', 'id'))
     order = request.args.get('order', config.get('default_order', 'asc'))
     search = request.args.get('search', '').strip()
-    query = model.query
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
     
-    # 调试日志：查看所有请求参数
-    current_app.logger.info(f"=== get_query_data called ===")
-    current_app.logger.info(f"  model_name: {model_name}")
-    current_app.logger.info(f"  search term: '{search}'")
-    current_app.logger.info(f"  request args: {dict(request.args)}")
-    
-    # 过滤掉自定义字段,只保留数据库字段
-    db_field_config = [f for f in field_config if not f.get('custom', False)]
-    
-    # 处理搜索 - 包括自定义字段
-    if search:
-        conditions = []
-        current_app.logger.info(f"Searching for: '{search}' in model: {model_name}")
-        
-        # 搜索原生字段
-        if config.get('search_fields'):
-            current_app.logger.info(f"Native search fields: {config.get('search_fields')}")
-            for field in config.get('search_fields', []):
-                column = getattr(model, field, None)
-                if column:
-                    try:
-                        conditions.append(cast(column, String).ilike(f'%{search}%'))
-                        current_app.logger.info(f"Adding native field search: {field}")
-                    except Exception as e:
-                        current_app.logger.warning(f"Could not search field {field}: {e}")
-                else:
-                    current_app.logger.warning(f"Field {field} not found on model {model}")
-        else:
-            current_app.logger.warning("No search_fields configured for this model")
-        
-        # 搜索自定义字段 - 仅对 vms 和 hosts
-        if model_name in ['vms', 'hosts']:
-            try:
-                from app.models import CustomFieldValue, CustomFieldEnumOption
-                resource_type = 'host' if model_name == 'hosts' else 'vm'
-                current_app.logger.info(f"=== Starting custom field search ===")
-                current_app.logger.info(f"  resource_type: {resource_type}")
-                current_app.logger.info(f"  search term: '{search}'")
-                
-                # 收集所有匹配的资源 ID
-                matching_resource_ids = set()
-                
-                # 首先查询所有自定义字段值，以便调试
-                all_custom_values = CustomFieldValue.query.filter(
-                    CustomFieldValue.resource_type == resource_type
-                ).all()
-                current_app.logger.info(f"  Total custom field values found: {len(all_custom_values)}")
-                for val in all_custom_values:
-                    current_app.logger.info(f"    CustomFieldValue: id={val.id}, field_id={val.field_id}, resource_id={val.resource_id}, "
-                                          f"varchar='{val.varchar_value}', int={val.int_value}, enum='{val.enum_value}', datetime={val.datetime_value}")
-                
-                # 1. 搜索非枚举类型的自定义字段值
-                current_app.logger.info(f"  Step 1: Searching non-enum fields")
-                non_enum_values = CustomFieldValue.query.filter(
-                    CustomFieldValue.resource_type == resource_type,
-                    or_(
-                        CustomFieldValue.varchar_value.ilike(f'%{search}%'),
-                        cast(CustomFieldValue.int_value, String).ilike(f'%{search}%'),
-                        cast(CustomFieldValue.datetime_value, String).ilike(f'%{search}%')
-                    )
-                ).all()
-                current_app.logger.info(f"  Non-enum matches found: {len(non_enum_values)}")
-                
-                for val in non_enum_values:
-                    matching_resource_ids.add(val.resource_id)
-                    current_app.logger.info(f"    Added match: resource_id={val.resource_id}")
-                
-                # 2. 搜索枚举类型的自定义字段值（直接匹配 enum_value）
-                current_app.logger.info(f"  Step 2: Searching enum values")
-                enum_values = CustomFieldValue.query.filter(
-                    CustomFieldValue.resource_type == resource_type,
-                    CustomFieldValue.enum_value.isnot(None),
-                    CustomFieldValue.enum_value.ilike(f'%{search}%')
-                ).all()
-                current_app.logger.info(f"  Enum value matches found: {len(enum_values)}")
-                
-                for val in enum_values:
-                    matching_resource_ids.add(val.resource_id)
-                    current_app.logger.info(f"    Added match: resource_id={val.resource_id}, enum_value={val.enum_value}")
-                
-                # 3. 搜索枚举类型的 option_label（通过关联表）
-                current_app.logger.info(f"  Step 3: Searching enum labels")
-                enum_options = CustomFieldEnumOption.query.filter(
-                    CustomFieldEnumOption.option_label.ilike(f'%{search}%')
-                ).all()
-                current_app.logger.info(f"  Enum label matches found: {len(enum_options)}")
-                
-                for opt in enum_options:
-                    current_app.logger.info(f"    Found enum option: field_id={opt.field_id}, option_key={opt.option_key}, option_label={opt.option_label}")
-                    # 找到使用这个 option 的所有资源
-                    opt_values = CustomFieldValue.query.filter(
-                        CustomFieldValue.resource_type == resource_type,
-                        CustomFieldValue.field_id == opt.field_id,
-                        CustomFieldValue.enum_value == opt.option_key
-                    ).all()
-                    current_app.logger.info(f"    Resources using this option: {len(opt_values)}")
-                    
-                    for val in opt_values:
-                        matching_resource_ids.add(val.resource_id)
-                        current_app.logger.info(f"    Added match: resource_id={val.resource_id}, label={opt.option_label}")
-                
-                # 如果有匹配的资源 ID，添加到条件中
-                current_app.logger.info(f"  Total matching resource IDs: {len(matching_resource_ids)}")
-                if matching_resource_ids:
-                    conditions.append(model.id.in_(list(matching_resource_ids)))
-                    current_app.logger.info(f"  Added custom field search condition with IDs: {list(matching_resource_ids)}")
-                else:
-                    current_app.logger.info("  No matching custom field values found")
-            except Exception as e:
-                current_app.logger.error(f"Could not search custom fields: {e}")
-                import traceback
-                current_app.logger.error(traceback.format_exc())
-        else:
-            current_app.logger.info(f"Model {model_name} not in ['vms', 'hosts'], skipping custom field search")
-        
-        # 应用所有搜索条件
-        if conditions:
-            try:
-                query = query.filter(or_(*conditions))
-                current_app.logger.info(f"Total search conditions: {len(conditions)}")
-                current_app.logger.info(f"Query: {query}")
-            except Exception as e:
-                current_app.logger.error(f"Error applying search conditions: {e}")
-                import traceback
-                current_app.logger.error(traceback.format_exc())
-        else:
-            current_app.logger.warning("No search conditions were added")
-    else:
-        current_app.logger.info("No search term provided")
-    
-    # 处理过滤参数
-    filter_mapping = {
-        'search': None,
-        'page': None,
-        'per_page': None,
-        'sort': None,
-        'order': None,
-        'visible_columns': None
-    }
+    # 收集所有过滤参数
+    filter_params = {}
+    field_config = config['field_config']
+    db_field_config = [f for f in field_config if not (isinstance(f, dict) and f.get('custom', False))]
     
     for field in db_field_config:
-        if field.get('filterable', False):
-            filter_mapping[field['db_field']] = field['db_field']
+        if isinstance(field, dict) and field.get('filterable', False):
+            filter_value = request.args.get(field['db_field'])
+            if filter_value:
+                filter_params[field['db_field']] = filter_value
     
-    for param_name, field_name in filter_mapping.items():
-        if not field_name:
-            continue
-            
-        filter_value = request.args.get(param_name)
-        if filter_value:
-            column = getattr(model, field_name, None)
-            if column:
-                values = filter_value.split(',')
-                if '__NULL__' in values:
-                    other_values = [v for v in values if v != '__NULL__']
-                    null_check = or_(column.is_(None), column == '')
-                    if other_values:
-                        query = query.filter(or_(null_check, column.in_(other_values)))
-                    else:
-                        query = query.filter(null_check)
-                elif len(values) > 1:
-                    query = query.filter(column.in_(values))
-                else:
-                    single_value = values[0]
-                    if isinstance(column.type, db.DateTime):
-                        date_val = None
-                        try:
-                            date_val = datetime.strptime(single_value, '%Y-%m-%d %H:%M:%S')
-                        except ValueError:
-                            current_app.logger.warning(f"Could not parse date '{single_value}'")
-                        
-                        if date_val:
-                            query = query.filter(column == date_val)
-                    else:
-                        query = query.filter(column.ilike(f'{single_value}'))
+    # 处理自定义字段过滤参数
+    if model_name:
+        from app.routes.generic_crud import get_custom_fields_from_db
+        custom_fields = get_custom_fields_from_db(model_name)
+        for param_name, filter_value in request.args.items():
+            if param_name in custom_fields:
+                filter_params[param_name] = filter_value
     
-    # 处理排序
-    valid_sort_fields = [f['db_field'] for f in db_field_config if f.get('sortable', False)]
-    if sort in valid_sort_fields:
-        sort_column = getattr(model, sort)
-        if sort in ('vm_ip'):
-            order_expr = func.inet_aton(sort_column)
-        else:
-            order_expr = sort_column
-   
-        if order.lower() == 'asc':
-            query = query.order_by(order_expr.asc())
-        else:
-            query = query.order_by(order_expr.desc())
+    # 生成缓存键
+    key_parts = [
+        'query',
+        config['model'].__name__,
+        f'sort:{sort}',
+        f'order:{order}',
+        f'search:{search}',
+        f'page:{page}',
+        f'per_page:{per_page}'
+    ]
     
-    if include_pagination:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-        start = (pagination.page - 1) * pagination.per_page + 1 if pagination.total > 0 else 0
-        end = min(start + pagination.per_page - 1, pagination.total)
-        
-        return {
-            'items': pagination.items,
-            'pagination': pagination,
-            'pagination_info': {
-                'page': pagination.page,
-                'per_page': pagination.per_page,
-                'total': pagination.total,
-                'pages': pagination.pages,
-                'has_prev': pagination.has_prev,
-                'has_next': pagination.has_next,
-                'prev_num': pagination.prev_num,
-                'next_num': pagination.next_num,
-                'start': start,
-                'end': end
-            },
-            'filter_params': {k: v for k, v in request.args.items() if k in filter_mapping and v},
-            'search': search,
-            'sort_by': sort,
-            'sort_order': order
-        }
-    else:
-        items = query.all()
-        return {
-            'items': items,
-            'search': search,
-            'sort_by': sort,
-            'sort_order': order,
-            'filter_params': {k: v for k, v in request.args.items() if k in filter_mapping and v}
-        }
+    # 添加过滤参数
+    for key, value in sorted(filter_params.items()):
+        key_parts.append(f'{key}:{value}')
+    
+    key = ':'.join(key_parts)
+    return key
 
+
+def get_list_cache_key(config, model_name):
+    """生成列表页面的缓存键"""
+    base_key = query_key_builder(config, model_name, include_pagination=True)
+    return f"list:{base_key}"
 
 def get_paginated_data(config, model_name=None, search_fields=None):
     return get_query_data(config, include_pagination=True, model_name=model_name)
+
+
+def assemble_vm_with_host(vm):
+    """
+    为单个VM对象动态组装host_info字段
+    
+    注意：host_info不存储在VM缓存中，避免主机信息变化时产生脏数据
+    
+    :param vm: VM对象（SQLAlchemy对象或DictObject）
+    :return: 带host_info字段的VM对象
+    """
+    from app.utils.cache_manager import batch_get_hosts, set_host, CacheTTL
+    from app.utils.valkey_client import serialize_sqlalchemy_object
+    from app.models import Host
+    
+    # 获取VM的host_id
+    host_id = vm.host_id if hasattr(vm, 'host_id') else (vm._data.get('host_id') if hasattr(vm, '_data') else None)
+    
+    if not host_id:
+        return vm
+    
+    # 从缓存获取主机对象
+    cached_hosts = batch_get_hosts([host_id])
+    
+    # 如果缓存未命中，从数据库获取并回填缓存
+    if host_id not in cached_hosts:
+        host = Host.query.get(host_id)
+        if host:
+            serialized = serialize_sqlalchemy_object(host)
+            if serialized:
+                set_host(host.id, serialized, ttl=CacheTTL.OBJECT)
+                cached_hosts[host.id] = serialized
+    
+    # 为VM添加host_info字段
+    if host_id in cached_hosts:
+        host_data = cached_hosts[host_id]
+        host_info = host_data.get('host_info')
+        # 为DictObject类型设置属性
+        if hasattr(vm, '_data'):
+            vm._data['host_info'] = host_info
+        # 为SQLAlchemy对象设置属性
+        elif hasattr(vm, '__dict__'):
+            vm.__dict__['host_info'] = host_info
+    
+    return vm
+
+
+def assemble_vm_list_with_host(vm_list):
+    """
+    为VM列表批量动态组装host_info字段（批量优化版）
+    
+    执行流程：
+    1. 收集所有VM的host_id列表（去重）
+    2. 用batch_get_hosts批量获取对应的host缓存
+    3. 未命中的host缓存批量查数据库并回填缓存
+    4. 给每个VM对象添加host_info字段
+    
+    注意：host_info不存储在VM缓存中，避免主机信息变化时产生脏数据
+    
+    :param vm_list: VM对象列表
+    :return: 带host_info字段的VM对象列表
+    """
+    from app.utils.cache_manager import batch_get_hosts, set_host, CacheTTL
+    from app.utils.valkey_client import serialize_sqlalchemy_object
+    from app.models import Host
+    
+    if not vm_list:
+        return vm_list
+    
+    # Step 1: 收集所有VM的host_id列表（去重）
+    host_ids = set()
+    vm_host_map = {}  # vm_id -> host_id
+    
+    for vm in vm_list:
+        host_id = vm.host_id if hasattr(vm, 'host_id') else (vm._data.get('host_id') if hasattr(vm, '_data') else None)
+        if host_id:
+            host_ids.add(host_id)
+            vm_host_map[vm.id] = host_id
+    
+    if not host_ids:
+        return vm_list
+    
+    # Step 2: 批量从缓存获取主机对象
+    host_ids_list = list(host_ids)
+    cached_hosts = batch_get_hosts(host_ids_list)
+    
+    # Step 3: 找出缓存未命中的主机ID，批量查数据库
+    missing_host_ids = [hid for hid in host_ids_list if hid not in cached_hosts]
+    if missing_host_ids:
+        db_hosts = Host.query.filter(Host.id.in_(missing_host_ids)).all()
+        for host in db_hosts:
+            serialized = serialize_sqlalchemy_object(host)
+            if serialized:
+                set_host(host.id, serialized, ttl=CacheTTL.OBJECT)
+                cached_hosts[host.id] = serialized
+    
+    # Step 4: 为每个VM添加host_info字段
+    for vm in vm_list:
+        host_id = vm_host_map.get(vm.id)
+        if host_id and host_id in cached_hosts:
+            host_data = cached_hosts[host_id]
+            # 缓存数据可能是字典或DictObject类型，支持两种访问方式
+            if isinstance(host_data, dict):
+                host_info = host_data.get('host_info')
+            else:
+                host_info = host_data.host_info if hasattr(host_data, 'host_info') else None
+            # 为DictObject类型设置属性
+            if hasattr(vm, '_data'):
+                vm._data['host_info'] = host_info
+            # 为SQLAlchemy对象设置属性
+            elif hasattr(vm, '__dict__'):
+                vm.__dict__['host_info'] = host_info
+    
+    return vm_list
+
+
+def get_query_data_with_cache(config, model_name=None, include_pagination=True):
+    """
+    带缓存的查询数据函数 - 严格遵循NetBox对象级缓存模式
+    
+    执行流程（严格按照规范）：
+    1. 只查数据库ID列表：SELECT id FROM host WHERE xxx ORDER BY id ASC LIMIT 20
+    2. 用Redis的mget命令批量获取：["host:1", "host:2", ..., "host:20"]
+    3. 把缓存命中的对象拿出来，没命中的ID再批量查一次数据库
+    4. 把查出来的新对象写入Redis缓存
+    5. 按ID顺序组装成items数组，加上分页信息返回给前端
+    
+    注意：绝对不缓存整页数据！只缓存单个对象！
+    """
+    import time
+    from app.utils.cache_manager import batch_get_hosts, batch_get_vms, set_host, set_vm, CacheTTL
+    from app.utils.valkey_client import serialize_sqlalchemy_object, wrap_dict_to_object
+    
+    start_time = time.time()
+    model = config['model']
+    
+    # Step 1: 查询数据库获取分页数据（包含完整对象和分页信息）
+    current_app.logger.info(f"[CACHE] Querying database for {model_name} list")
+    query_data = get_query_data(config, include_pagination=True, model_name=model_name)
+    
+    items = query_data.get('items', [])
+    
+    if not items:
+        response_time = (time.time() - start_time) * 1000
+        current_app.logger.info(f"[CACHE] Empty result - Response time: {response_time:.2f}ms")
+        return query_data
+    
+    # Step 2: 收集当前页所有item的ID
+    item_ids = [item.id for item in items if hasattr(item, 'id')]
+    current_app.logger.info(f"[CACHE] Found {len(item_ids)} items in current page")
+    
+    # Step 3: 批量从缓存获取单体对象
+    cached_items = {}
+    if model_name == 'vms' and item_ids:
+        cached_items = batch_get_vms(item_ids)
+    elif model_name == 'hosts' and item_ids:
+        cached_items = batch_get_hosts(item_ids)
+    
+    current_app.logger.info(f"[CACHE] Cache hit for {len(cached_items)}/{len(item_ids)} items")
+    
+    # Step 4: 缓存未命中的ID需要从数据库获取（已在第一步获取，直接使用）
+    # Step 5: 组装结果并写入缓存（保持原有顺序）
+    result_items = []
+    for item in items:
+        item_id = item.id
+        
+        if item_id in cached_items:
+            # 缓存命中，检查是否包含自定义字段
+            cached_data = cached_items[item_id]
+            # 如果缓存数据没有包含自定义字段（旧数据），则视为未命中
+            has_custom_fields = False
+            if isinstance(cached_data, dict) and 'custom_fields' in cached_data:
+                has_custom_fields = True
+            
+            if has_custom_fields:
+                # 缓存数据包含自定义字段，直接使用
+                wrapped_item = wrap_dict_to_object(cached_data)
+                result_items.append(wrapped_item)
+                current_app.logger.debug(f"[CACHE] HIT key={model_name}:{item_id}")
+            else:
+                # 缓存数据不包含自定义字段，视为未命中，从数据库获取
+                current_app.logger.debug(f"[CACHE] HIT but missing custom fields, reloading key={model_name}:{item_id}")
+                serialized = serialize_sqlalchemy_object(item)
+                if serialized:
+                    if model_name == 'vms':
+                        set_vm(item_id, serialized, ttl=CacheTTL.OBJECT)
+                    elif model_name == 'hosts':
+                        set_host(item_id, serialized, ttl=CacheTTL.OBJECT)
+                    current_app.logger.debug(f"[CACHE] SET key={model_name}:{item_id} ttl={CacheTTL.OBJECT}s")
+                    wrapped_item = wrap_dict_to_object(serialized)
+                    result_items.append(wrapped_item)
+                else:
+                    result_items.append(item)
+        else:
+            # 缓存未命中，使用数据库数据并写入缓存
+            serialized = serialize_sqlalchemy_object(item)
+            if serialized:
+                if model_name == 'vms':
+                    set_vm(item_id, serialized, ttl=CacheTTL.OBJECT)
+                elif model_name == 'hosts':
+                    set_host(item_id, serialized, ttl=CacheTTL.OBJECT)
+                current_app.logger.debug(f"[CACHE] SET key={model_name}:{item_id} ttl={CacheTTL.OBJECT}s")
+                # 使用序列化后的对象（包含自定义字段），而不是原始 SQLAlchemy 对象
+                wrapped_item = wrap_dict_to_object(serialized)
+                result_items.append(wrapped_item)
+            else:
+                result_items.append(item)
+    
+    # 更新查询结果中的items
+    query_data['items'] = result_items
+    
+    # 对于VM列表，动态组装host_info字段（不在缓存中存储关联数据）
+    if model_name == 'vms' and result_items:
+        query_data['items'] = assemble_vm_list_with_host(result_items)
+    
+    response_time = (time.time() - start_time) * 1000
+    current_app.logger.info(f"[CACHE] Query completed - Response time: {response_time:.2f}ms")
+    
+    return query_data
 
 
 def is_valid_ipv4(ip_str):
@@ -536,13 +576,14 @@ def list_view(config, model_name):
 
     form_fields = config.get('form_fields', [])
     if model_name == 'vms':
-        hosts = Host.query.all()
+        from app.models import Host as HostModel
+        hosts = HostModel.query.all()
         host_options = [(host.host_info) for host in hosts]
         for field in form_fields:
             if field['name'] == 'host_id':
                 field['options'] = host_options
 
-    query_data = get_query_data(config, include_pagination=True, model_name=model_name)
+    query_data = get_query_data_with_cache(config, include_pagination=True, model_name=model_name)
 
     visible_fields = [f for f in all_field_config if f['db_field'] in visible_columns]
     visible_fields.sort(key=lambda x: visible_columns.index(x['db_field']))
@@ -603,7 +644,8 @@ def create_view(config, model_name):
     form_fields = config['form_fields']
     
     if model_name == 'vms':
-        hosts = Host.query.all()
+        from app.models import Host as HostModel
+        hosts = HostModel.query.all()
         host_options = [(host.host_info) for host in hosts]
         for field in form_fields:
             if field['name'] == 'host_id':
@@ -617,6 +659,11 @@ def create_view(config, model_name):
         else:
             data = request.form.to_dict()
         
+        # 对所有字符串字段进行 trim 处理，去除前导和尾随空格
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = value.strip()
+        
         errors = {}
         for field in form_fields:
             if field.get('required') and not data.get(field['name']):
@@ -628,10 +675,18 @@ def create_view(config, model_name):
             if existing_host:
                 errors['host_info'] = f"Host '{host_info}' already exists."
         
+        # 验证 host_ipaddress 的唯一性
+        if model_name == 'hosts' and 'host_ipaddress' in data:
+            host_ipaddress = data['host_ipaddress'].strip()
+            existing_host = model.query.filter_by(host_ipaddress=host_ipaddress).first()
+            if existing_host:
+                errors['host_ipaddress'] = f"Host IP {host_ipaddress} already exists."
+        
         host_id = None
         if model_name == 'vms' and 'host_id' in data:
+            from app.models import Host as HostModel
             host_info = data['host_id']
-            host = Host.query.filter_by(host_info=host_info).first()
+            host = HostModel.query.filter_by(host_info=host_info).first()
             if not host:
                 errors['host_id'] = f"Host '{host_info}' not found."
             else:
@@ -641,6 +696,12 @@ def create_view(config, model_name):
             vm_ip = data['vm_ip']
             if vm_ip and not is_valid_ipv4(vm_ip):
                 errors['vm_ip'] = f"IP address '{vm_ip}' is not a valid IPv4 format."
+            # 验证 vm_ip 的唯一性
+            if vm_ip:
+                from app.models import VM as VMModel
+                existing_vm = VMModel.query.filter_by(vm_ip=vm_ip).first()
+                if existing_vm:
+                    errors['vm_ip'] = f"VM IP {vm_ip} already exists."
         
         if errors:
             if request.is_json:
@@ -702,6 +763,11 @@ def create_view(config, model_name):
         try:
             db.session.add(new_item)
             db.session.flush()
+            
+            # 如果是创建VM，更新对应主机的vm_count
+            if model_name == 'vms' and host_id:
+                from app.models import Host
+                db.session.query(Host).filter_by(id=host_id).update({"vm_count": Host.vm_count + 1})
 
             # 收集自定义字段数据用于日志
             custom_fields_for_log = {}
@@ -802,6 +868,16 @@ def create_view(config, model_name):
             log_change('created', model_name, identifier, detail_obj=detail_with_host)
             
             db.session.commit()
+            
+            if model_name == 'vms':
+                # 新增VM后需要删除对应主机的缓存（因为vm_count变化了）
+                from app.utils.cache_manager import invalidate_all_stats, delete_host, delayed_delete_host
+                invalidate_all_stats()
+                if host_id:
+                    delete_host(host_id)
+                    # 延迟双删确保缓存一致性
+                    import threading
+                    threading.Timer(0.5, lambda: delete_host(host_id)).start()
 
             if request.is_json:
                 return jsonify({
@@ -867,7 +943,8 @@ def edit_view(config, model_name, id):
         return redirect(url_for('generic_crud.list_view', model_name=model_name))
     
     if model_name == 'vms':
-        hosts = Host.query.all()
+        from app.models import Host as HostModel
+        hosts = HostModel.query.all()
         host_options = [(host.host_info) for host in hosts]
         for field in form_fields:
             if field['name'] == 'host_id':
@@ -880,6 +957,11 @@ def edit_view(config, model_name, id):
             data = request.get_json() or {}
         else:
             data = request.form.to_dict() or {}
+        
+        # 对所有字符串字段进行 trim 处理，去除前导和尾随空格
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = value.strip()
         
         errors = {}
         # 验证必填字段
@@ -900,13 +982,21 @@ def edit_view(config, model_name, id):
             if existing_host and existing_host.id != id:
                 errors['host_info'] = f"Host '{host_info}' already exists."
         
+        # 验证 host_ipaddress 的唯一性（排除当前记录）
+        if model_name == 'hosts' and 'host_ipaddress' in data:
+            host_ipaddress = data['host_ipaddress'].strip()
+            existing_host = model.query.filter_by(host_ipaddress=host_ipaddress).first()
+            if existing_host and existing_host.id != id:
+                errors['host_ipaddress'] = f"Host IP {host_ipaddress} already exists."
+        
         if model_name == 'vms':
+            from app.models import Host as HostModel
             # 处理主机ID转换
             host_id = None
             if 'host_id' in data:
                 host_info = data['host_id']
                 if host_info:
-                    host = Host.query.filter_by(host_info=host_info).first()
+                    host = HostModel.query.filter_by(host_info=host_info).first()
                     if not host:
                         errors['host_id'] = f"Host '{host_info}' not found."
                     else:
@@ -923,7 +1013,7 @@ def edit_view(config, model_name, id):
                 else:
                     existing_vm = VM.query.filter_by(vm_ip=vm_ip).first()
                     if existing_vm and existing_vm.id != id:
-                        errors['vm_ip'] = f"VM with IP '{vm_ip}' already exists."
+                        errors['vm_ip'] = f"VM IP {vm_ip} already exists."
         
         # 数字字段验证
         for field in form_fields:
@@ -1186,8 +1276,8 @@ def edit_view(config, model_name, id):
                     has_host_id_change = any(c['field'] == 'host_id' for c in changes)
                     if has_host_id_change:
                         host_id_changes = [c for c in changes if c['field'] == 'host_id'][0]
-                        old_host = Host.query.get(host_id_changes['old_value']) if host_id_changes['old_value'] else None
-                        new_host = Host.query.get(host_id_changes['new_value']) if host_id_changes['new_value'] else None
+                        old_host = HostModel.query.get(host_id_changes['old_value']) if host_id_changes['old_value'] else None
+                        new_host = HostModel.query.get(host_id_changes['new_value']) if host_id_changes['new_value'] else None
                         old_host_info = old_host.host_info if old_host else 'Unknown'
                         new_host_info = new_host.host_info if new_host else 'Unknown'
                         
@@ -1206,8 +1296,40 @@ def edit_view(config, model_name, id):
                 
                 log_change('updated', model_name, identifier, detail_obj={'changes': changes})
             
-            # 确保提交事务
+            # 如果是VM且host_id发生变化，需要更新主机的vm_count
+            if model_name == 'vms' and has_host_id_change:
+                old_host_id = host_id_changes['old_value']
+                new_host_id = host_id_changes['new_value']
+                
+                # 更新原主机的vm_count（减1）
+                if old_host_id:
+                    db.session.query(HostModel).filter_by(id=old_host_id).update({"vm_count": HostModel.vm_count - 1})
+                # 更新新主机的vm_count（加1）
+                if new_host_id:
+                    db.session.query(HostModel).filter_by(id=new_host_id).update({"vm_count": HostModel.vm_count + 1})
+            
             db.session.commit()
+            
+            # 使用延迟双删保证缓存一致性
+            # 修改数据 → 只删除单条缓存（不批量删除前缀！）
+            if model_name == 'vms':
+                from app.utils.cache_manager import delayed_delete_vm, delayed_delete_host, invalidate_all_stats
+                delayed_delete_vm(item.id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+                invalidate_all_stats()      # 失效统计缓存（因为数据可能变化）
+                
+                # 如果host_id发生变化，删除原主机和新主机的缓存
+                if has_host_id_change:
+                    old_host_id = host_id_changes['old_value']
+                    new_host_id = host_id_changes['new_value']
+                    
+                    if old_host_id:
+                        delayed_delete_host(old_host_id)
+                    if new_host_id:
+                        delayed_delete_host(new_host_id)
+            elif model_name == 'hosts':
+                from app.utils.cache_manager import delayed_delete_host, invalidate_all_stats
+                delayed_delete_host(item.id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+                invalidate_all_stats()        # 失效统计缓存（因为数据可能变化）
 
             if request.is_json:
                 return jsonify({
@@ -1256,8 +1378,13 @@ def edit_view(config, model_name, id):
     for field in form_fields:
         field_name = field['name']
         if model_name == 'vms' and field_name == 'host_id':
-            # 显示主机信息而非 ID
-            data[field_name] = item.host.host_info if (item.host and item.host.host_info) else ''
+            # 显示主机信息而非 ID（支持缓存对象和数据库对象）
+            host_info = ''
+            if hasattr(item, 'host_info') and item.host_info:
+                host_info = item.host_info
+            elif hasattr(item, 'host') and item.host and hasattr(item.host, 'host_info'):
+                host_info = item.host.host_info
+            data[field_name] = host_info
         else:
             value = getattr(item, field_name)
             # 格式化日期时间显示
@@ -1289,11 +1416,15 @@ def delete_view(config, model_name, id):
     
     if model_name == 'vms':
         identifier = getattr(item, 'vm_ip', str(item.id))
-        host = Host.query.get(item.host_id) if item.host_id else None
+        # 确保使用正确的Host模型类
+        from app.models import Host as HostModel
+        host = HostModel.query.get(item.host_id)
+        # 处理host不存在的情况（可能是缓存数据与数据库不一致）
+        host_info = host.host_info if host else f"Unknown (host_id: {item.host_id})"
         item_details = {
             'vm_details': to_dict(item),
             'host_relation': {
-                'host_info': host.host_info
+                'host_info': host_info
             }
         }
     elif model_name == 'hosts':
@@ -1312,8 +1443,14 @@ def delete_view(config, model_name, id):
         item_details = {k: v for k, v in full_details.items() if k in allowed_fields}
 
     try:
+        # 如果是删除VM，先记录主机ID用于后续缓存操作
+        vm_host_id = None
+        if model_name == 'vms' and item.host_id:
+            vm_host_id = item.host_id
+        
         if model_name == 'hosts' and hasattr(item, 'vms'):
-            for vm in item.vms:
+            # 删除关联的VM并记录日志
+            for vm in list(item.vms):  # 使用list()避免迭代时修改集合
                 vm_host_info = item.host_info if item else 'Unknown'
                 vm_details = {
                     'vm_details': to_dict(vm),
@@ -1323,11 +1460,36 @@ def delete_view(config, model_name, id):
                     }
                 }
                 log_change('deleted', 'vms', vm.vm_ip, detail_obj=vm_details)
+                # 实际删除VM
+                db.session.delete(vm)
 
         log_change('deleted', model_name, identifier, detail_obj=item_details)
         
+        # 如果是删除VM，更新对应主机的vm_count
+        if model_name == 'vms' and vm_host_id:
+            from app.models import Host
+            db.session.query(Host).filter_by(id=vm_host_id).update({"vm_count": Host.vm_count - 1})
+        
         db.session.delete(item)
         db.session.commit()
+        
+        if model_name == 'vms':
+            from app.utils.cache_manager import delayed_delete_vm, invalidate_all_stats, delete_host
+            delayed_delete_vm(id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+            invalidate_all_stats()  # 失效统计缓存（因为数量变化）
+            # 删除对应主机的缓存（因为vm_count变化了）
+            if vm_host_id:
+                delete_host(vm_host_id)
+                import threading
+                threading.Timer(0.5, lambda: delete_host(vm_host_id)).start()
+        elif model_name == 'hosts':
+            from app.utils.cache_manager import delayed_delete_host, delayed_delete_vm, invalidate_all_stats
+            # 删除关联VM的缓存
+            if hasattr(item, 'vms'):
+                for vm in item.vms:
+                    delayed_delete_vm(vm.id)
+            delayed_delete_host(id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+            invalidate_all_stats()   # 失效统计缓存（因为数量变化）
 
         flash(f'{config["model_name"]} deleted successfully', 'success')
         
@@ -1424,6 +1586,17 @@ def get_filter_options(config, model_name):
             return jsonify({'options': list(unique_options)})
 
     model = config['model']
+    
+    # 特殊处理：VM 的 host_info 字段不是直接字段，需要从 Host 模型获取
+    if model_name == 'vms' and field_name == 'host_info':
+        # 获取所有 host 的 host_info 作为过滤选项
+        hosts = Host.query.all()
+        response_options = []
+        for host in hosts:
+            response_options.append({'value': host.host_info, 'label': host.host_info})
+        response_options.sort(key=lambda x: x['label'])
+        return jsonify({'options': response_options})
+    
     column = getattr(model, field_name, None)
     if column is None:
         return jsonify({'error': 'Invalid field name'}), 400
@@ -1501,7 +1674,7 @@ def get_filter_options(config, model_name):
     
 
 
-# 2. 修改主查询逻辑，确保host_id过滤使用正确的关联条件
+# 2. 修改主查询逻辑，确保 host_id 过滤使用正确的关联条件
 def get_query_data(config, model_name=None, include_pagination=True):
     model = config['model']
     field_config = config['field_config']   
@@ -1593,8 +1766,26 @@ def get_query_data(config, model_name=None, include_pagination=True):
             
         filter_value = request.args.get(param_name)
         if filter_value:
+            # 特殊处理：VM 的 host_info 字段需要通过关联 Host 表过滤
+            if model_name == 'vms' and field_name == 'host_info':
+                values = filter_value.split(',')
+                host_ids = []
+                
+                for value in values:
+                    if value == '__NULL__':
+                        # 处理空值情况
+                        null_check = or_(model.host_id.is_(None), model.host_id == '')
+                        query = query.filter(null_check)
+                    else:
+                        # 通过host_info查找对应的host_id
+                        host = Host.query.filter_by(host_info=value).first()
+                        if host:
+                            host_ids.append(host.id)
+                
+                if host_ids:
+                    query = query.filter(model.host_id.in_(host_ids))
             # 特殊处理host_id过滤，允许通过host_info过滤
-            if field_name == 'host_id' and hasattr(model, 'host'):
+            elif field_name == 'host_id' and hasattr(model, 'host'):
                 values = filter_value.split(',')
                 host_ids = []
                 other_values = []
@@ -2306,11 +2497,15 @@ def bulk_delete_view(config, model_name):
             # 处理关联的VM（原逻辑保留）
             if model_name == 'vms':
                 identifier = getattr(item, 'vm_ip', str(item.id))
-                host = Host.query.get(item.host_id) if item.host_id else None
+                # 确保使用正确的Host模型类
+                from app.models import Host as HostModel
+                host = HostModel.query.get(item.host_id)
+                # 处理host不存在的情况（可能是缓存数据与数据库不一致）
+                host_info = host.host_info if host else f"Unknown (host_id: {item.host_id})"
                 vm_details = {
                     'vm_details': to_dict(item),
                     'host_relation': {
-                        'host_info': host.host_info
+                        'host_info': host_info
                     }
                 }
                 log_change('deleted', model_name, identifier, detail_obj=vm_details)
@@ -2329,9 +2524,52 @@ def bulk_delete_view(config, model_name):
                 identifier = getattr(item, 'host_info', getattr(item, 'vm_ip', str(item.id)))
                 log_change('deleted', model_name, identifier, detail_obj=to_dict(item))
 
+        # 如果是批量删除VM，统计每个主机需要减少的VM数量
+        if model_name == 'vms':
+            host_vm_count = {}
+            for item in items_to_delete:
+                if item.host_id:
+                    host_vm_count[item.host_id] = host_vm_count.get(item.host_id, 0) + 1
+            
+            # 在事务中批量更新主机的vm_count
+            from app.models import Host
+            for host_id, count in host_vm_count.items():
+                db.session.query(Host).filter_by(id=host_id).update({"vm_count": Host.vm_count - count})
+        
         # 执行删除操作
-        model.query.filter(model.id.in_(ids_to_delete)).delete(synchronize_session=False)
+        if model_name == 'hosts':
+            # 对于主机，需要逐个删除以触发级联删除关联的VM
+            for item in items_to_delete:
+                db.session.delete(item)
+        else:
+            # 其他模型可以批量删除
+            model.query.filter(model.id.in_(ids_to_delete)).delete(synchronize_session=False)
         db.session.commit()
+        
+        from app.utils.cache_manager import delayed_delete_vm, delayed_delete_host, invalidate_all_stats, delete_host
+        
+        if model_name == 'vms':
+            for vm_id in ids_to_delete:
+                delayed_delete_vm(vm_id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+            
+            # 删除所有相关主机的缓存（因为vm_count变化了）
+            import threading
+            for host_id in host_vm_count.keys():
+                delete_host(host_id)
+                threading.Timer(0.5, lambda hid=host_id: delete_host(hid)).start()
+        elif model_name == 'hosts':
+            for host_id in ids_to_delete:
+                delayed_delete_host(host_id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+            
+            # 删除所有关联VM的缓存（因为VM被级联删除了）
+            for item in items_to_delete:
+                if hasattr(item, 'vms'):
+                    for vm in item.vms:
+                        delayed_delete_vm(vm.id)
+        
+        # 失效统计缓存
+        invalidate_all_stats()
+        
         return jsonify({'success': True, 'message': 'Bulk deletion successful'})
     
     except Exception as e:
@@ -2382,13 +2620,9 @@ def bulk_edit_view(config, model_name):
     if not all([ids_to_edit, field_to_edit]):
         return jsonify({'success': False, 'message': 'Missing required parameters'}), 400
     
-    # 仅对字符串类型的值进行处理，保留数字和布尔值的原始类型
+    # 对所有字符串类型的值进行 trim 处理，去除前导和尾随空格
     if isinstance(new_value, str):
-        # 处理包含显示文本和值的情况（提取实际值）
-        if ',' in new_value:
-            new_value = new_value.split(',')[0].strip()
-        else:
-            new_value = new_value.strip()  # 去除前后空格
+        new_value = new_value.strip()
     
     # 处理空值情况
     if new_value == '':
@@ -2434,6 +2668,17 @@ def bulk_edit_view(config, model_name):
             errors = {field_to_edit: f"Host '{trimmed_value}' already exists"}
             log_bulk_edit_errors(items_to_edit, model_name, field_to_edit, new_value, errors)
             return jsonify({'success': False, 'message': f"Host '{trimmed_value}' already exists"}), 400
+    
+    # 针对hosts模型的host_ipaddress字段唯一性验证
+    if model_name == 'hosts' and field_to_edit == 'host_ipaddress' and new_value:
+        trimmed_value = new_value.strip() if isinstance(new_value, str) else new_value
+        existing_host = Host.query.filter_by(host_ipaddress=trimmed_value).first()
+        if existing_host and existing_host.id not in ids_to_edit:
+            # 获取需要编辑的项目以记录日志
+            items_to_edit = model.query.filter(model.id.in_(ids_to_edit)).all()
+            errors = {field_to_edit: f"Host IP {trimmed_value} already exists."}
+            log_bulk_edit_errors(items_to_edit, model_name, field_to_edit, new_value, errors)
+            return jsonify({'success': False, 'message': f"Host IP {trimmed_value} already exists."}), 400
 
     # 针对vms模型的vm_ip格式验证
     if model_name == 'vms' and field_to_edit == 'vm_ip' and new_value:
@@ -2447,6 +2692,15 @@ def bulk_edit_view(config, model_name):
                 'success': False, 
                 'message': f"IP address '{trimmed_value}' is not a valid IPv4 format."
             }), 400
+        
+        # 验证 vm_ip 的唯一性（排除当前编辑的记录）
+        existing_vm = VM.query.filter_by(vm_ip=trimmed_value).first()
+        if existing_vm and existing_vm.id not in ids_to_edit:
+            # 获取需要编辑的项目以记录日志
+            items_to_edit = model.query.filter(model.id.in_(ids_to_edit)).all()
+            errors = {field_to_edit: f"VM IP {trimmed_value} already exists."}
+            log_bulk_edit_errors(items_to_edit, model_name, field_to_edit, new_value, errors)
+            return jsonify({'success': False, 'message': f"VM IP {trimmed_value} already exists."}), 400
     
     # 验证字段是否允许编辑
     if not field_config and not custom_field:
@@ -2575,7 +2829,18 @@ def bulk_edit_view(config, model_name):
             
             db.session.commit()
             
-            # 记录日志
+            from app.utils.cache_manager import delayed_delete_vm, delayed_delete_host, invalidate_all_stats
+            
+            if model_name == 'vms':
+                for item, _ in items_to_log:
+                    delayed_delete_vm(item.id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+            elif model_name == 'hosts':
+                for item, _ in items_to_log:
+                    delayed_delete_host(item.id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+            
+            # 失效统计缓存
+            invalidate_all_stats()
+            
             for item, detail_log in items_to_log:
                 if model_name == 'vms':
                     identifier = getattr(item, 'vm_ip', str(item.id))
@@ -2589,9 +2854,10 @@ def bulk_edit_view(config, model_name):
 
         # 处理host_id特殊逻辑（仅当编辑字段为host_id时）
         if model_name == 'vms' and field_to_edit == 'host_id' and new_value:
+            from app.models import Host as HostModel
             # 处理主机信息的空格
             trimmed_host_value = new_value.strip() if isinstance(new_value, str) else new_value
-            new_host = Host.query.filter_by(host_info=trimmed_host_value).first()
+            new_host = HostModel.query.filter_by(host_info=trimmed_host_value).first()
             if new_host:
                 new_host_id = new_host.id
                 new_host_info = new_host.host_info
@@ -2630,7 +2896,7 @@ def bulk_edit_view(config, model_name):
 
             # 仅当编辑host_id且主机实际变化时，补充host_info变更
             if model_name == 'vms' and field_to_edit == 'host_id':
-                old_host = Host.query.get(old_value) if old_value else None
+                old_host = HostModel.query.get(old_value) if old_value else None
                 old_host_info = old_host.host_info if old_host else 'Unknown'
                 # 只有新旧主机信息不同时才添加host_info日志
                 if old_host_info != new_host_info:
@@ -2682,7 +2948,25 @@ def bulk_edit_view(config, model_name):
                 )
                 db.session.commit()
                 
-                # 只有在成功更新后才记录日志
+                from app.utils.cache_manager import delayed_delete_vm, delayed_delete_host, invalidate_all_stats
+                
+                if model_name == 'vms':
+                    for item, _ in items_to_log:
+                        delayed_delete_vm(item.id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+                        if field_to_edit == 'host_id':
+                            # 删除原主机的缓存
+                            if hasattr(item, 'host_id') and item.host_id:
+                                delayed_delete_host(item.host_id)
+                            # 删除新主机的缓存
+                            if new_host_id:
+                                delayed_delete_host(new_host_id)
+                elif model_name == 'hosts':
+                    for item, _ in items_to_log:
+                        delayed_delete_host(item.id)  # 延迟双删：先删缓存 → 更新数据库 → 延迟500ms再删一次
+                
+                # 失效统计缓存
+                invalidate_all_stats()
+                
                 for item, detail_log in items_to_log:
                     # 记录操作日志
                     if model_name == 'vms':
@@ -2777,7 +3061,8 @@ def import_data_view(config, model_name):
             existing_hosts = {h.host_info: h.id for h in Host.query.with_entities(Host.host_info, Host.id).all()}
         elif model_name == 'hosts':
             unique_field_name = 'host_info'
-            existing_hosts_info = {h.host_info for h in Host.query.with_entities(Host.host_info).all()}
+            # 使用model代替Host，避免局部变量问题
+            existing_hosts_info = {h.host_info for h in model.query.with_entities(model.host_info).all()}
         
         unique_field_label = next((label for label, name in label_to_name_map.items() if name == unique_field_name), None)
 
@@ -2928,10 +3213,34 @@ def import_data_view(config, model_name):
                 'detail_obj': log_item_data
             })
 
+        # 如果是导入VM，统计每个主机需要增加的VM数量
+        if model_name == 'vms':
+            host_vm_count = {}
+            for row in csv_data:
+                host_info_value = row.get('HOST INFO')
+                if host_info_value and host_info_value in existing_hosts:
+                    host_id = existing_hosts[host_info_value]
+                    host_vm_count[host_id] = host_vm_count.get(host_id, 0) + 1
+            
+            # 在事务中批量更新主机的vm_count
+            from app.models import Host
+            for host_id, count in host_vm_count.items():
+                db.session.query(Host).filter_by(id=host_id).update({"vm_count": Host.vm_count + count})
+        
         # 所有行处理完成，提交事务
         db.session.commit()
         
-        # 保存自定义字段值
+        # 失效统计缓存（导入会改变数据数量）
+        from app.utils.cache_manager import invalidate_all_stats, delete_host
+        invalidate_all_stats()
+        
+        # 如果是导入VM，删除所有相关主机的缓存（因为vm_count变化了）
+        if model_name == 'vms' and host_vm_count:
+            import threading
+            for host_id in host_vm_count.keys():
+                delete_host(host_id)
+                threading.Timer(0.5, lambda hid=host_id: delete_host(hid)).start()
+        
         for custom_field_data in custom_fields_to_save:
             resource_id = custom_field_data['resource_id']
             for field_data in custom_field_data['fields']:
@@ -3124,6 +3433,9 @@ def export_csv_view(config, model_name):
                     value = host_map[host_id]
                 else:
                     value = host_id if host_id else ''
+            elif field.get('custom'):
+                # 自定义字段但没有值的情况
+                value = ''
             else:
                 value = getattr(item, field['db_field'])
             
@@ -3213,3 +3525,54 @@ def reset_user_password(config, model_name):
     
     flash(f'Password for user {user.username} has been successfully reset. {user.username} must change their password at next login.', 'success')
     return redirect(url_for('generic_crud.list_view', model_name=model_name))
+
+
+@generic_crud_bp.route('/hosts/recalculate-vm-count', methods=['POST'])
+@login_required
+@admin_required
+def recalculate_host_vm_count():
+    """
+    重新统计所有主机的VM数量并更新（数据一致性兜底接口）
+    
+    当vm_count出现不一致时，可调用此接口重新统计所有主机的VM数量
+    
+    权限要求：admin
+    """
+    from app.models import Host, VM
+    from app.utils.cache_manager import delete_host, invalidate_all_stats
+    
+    try:
+        # 获取所有主机
+        hosts = Host.query.all()
+        
+        # 统计每个主机的VM数量
+        vm_counts = {}
+        for host in hosts:
+            count = VM.query.filter_by(host_id=host.id).count()
+            vm_counts[host.id] = count
+        
+        # 在事务中批量更新
+        with db.session.begin():
+            for host_id, count in vm_counts.items():
+                db.session.query(Host).filter_by(id=host_id).update({"vm_count": count})
+        
+        # 删除所有主机的缓存
+        for host_id in vm_counts.keys():
+            delete_host(host_id)
+        
+        # 失效统计缓存
+        invalidate_all_stats()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully recalculated VM counts for {len(vm_counts)} hosts.',
+            'data': vm_counts
+        })
+    
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Failed to recalculate host VM counts: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
