@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.models import db, VM, Host
 from app.services.log_service import log_change
 from app.utils.ssh_helper import execute_ssh_command, get_ssh_user
+from app.utils.cache_manager import delayed_delete_vm, invalidate_all_stats
 
 
 # 创建限流器
@@ -26,17 +27,28 @@ class VMStatusSyncService:
     def __init__(self, ssh_user):
         self.ssh_user = ssh_user
     
-    def execute_ssh_command(self, host, command, timeout=30):
+    def execute_ssh_command(self, host, command, timeout=30, port=None):
         """
         执行 SSH 命令（包装函数）
         
         :param host: 宿主机 IP 或 Host 对象
         :param command: 要执行的命令
         :param timeout: 超时时间（秒）
+        :param port: SSH 端口（如果为None，从Host对象提取ssh_port，默认22）
         :return: (output, error, exit_status)
         """
-        host_ip = host if isinstance(host, str) else host.split('_')[0]
-        return execute_ssh_command(host_ip, command, self.ssh_user, timeout)
+        # 如果传入的是 Host 对象，提取 IP 和端口
+        if isinstance(host, str):
+            host_ip = host
+            # 如果端口未指定，使用默认值22
+            ssh_port = port if port is not None else 22
+        else:
+            # 假设是 Host 对象
+            host_ip = host.host_ipaddress if hasattr(host, 'host_ipaddress') else str(host).split('_')[0]
+            # 优先使用传入的port参数，否则从Host对象提取，最后使用默认值22
+            ssh_port = port if port is not None else (host.ssh_port if hasattr(host, 'ssh_port') else 22)
+        
+        return execute_ssh_command(host_ip, command, self.ssh_user, timeout, ssh_port)
     
     def sync_all_vms(self, max_workers=10):
         """
@@ -80,8 +92,11 @@ class VMStatusSyncService:
         
         def process_host_impl(host_info, host_vm_list):
             """处理单个宿主机的 VM（实际实现）"""
-            host_type = host_vm_list[0].host.virtualization_type if host_vm_list[0].host else None
-            host_ip = host_info.split('_')[0]
+            host = host_vm_list[0].host if host_vm_list[0].host else None
+            host_type = host.virtualization_type if host else None
+            # 使用 host_ipaddress 和 ssh_port 字段
+            host_ip = host.host_ipaddress if host else host_info.split('_')[0]
+            ssh_port = host.ssh_port if host else 22
             
             # 本宿主机的结果
             host_results = {
@@ -97,9 +112,9 @@ class VMStatusSyncService:
             vm_list_output = None
             
             if host_type == 'pve':
-                vm_info_map = self._get_all_vm_ids_and_status_pve(host_ip)
+                vm_info_map = self._get_all_vm_ids_and_status_pve(host_ip, ssh_port)
             elif host_type == 'kvm':
-                vm_list_output, error, _ = self.execute_ssh_command(host_ip, "sudo virsh list --all --name")
+                vm_list_output, error, _ = self.execute_ssh_command(host_ip, "sudo virsh list --all --name", port=ssh_port)
                 vm_list_output = vm_list_output if not error else None
             
             if host_type and not vm_info_map and not vm_list_output:
@@ -109,6 +124,9 @@ class VMStatusSyncService:
                     if old_status != 'unknown':
                         vm.status = 'unknown'
                         vm.updated_at = datetime.now()
+                        
+                        # 状态变化是写操作，必须双删缓存
+                        delayed_delete_vm(vm.id)
                         
                         log_details = {
                             'old_status': old_status,
@@ -185,6 +203,9 @@ class VMStatusSyncService:
                                 vm.status = 'unknown'
                                 vm.updated_at = datetime.now()
                                 
+                                # 状态变化是写操作，必须双删缓存
+                                delayed_delete_vm(vm.id)
+                                
                                 log_details = {
                                     'old_status': old_status,
                                     'new_status': 'unknown',
@@ -232,6 +253,9 @@ class VMStatusSyncService:
                                 vm.status = 'unknown'
                                 vm.updated_at = datetime.now()
                                 
+                                # 状态变化是写操作，必须双删缓存
+                                delayed_delete_vm(vm.id)
+                                
                                 log_details = {
                                     'old_status': old_status,
                                     'new_status': 'unknown',
@@ -267,7 +291,7 @@ class VMStatusSyncService:
                             host_results['success'] += 1
                             continue
                         
-                        status_output, status_err, _ = self.execute_ssh_command(host_ip, f"sudo virsh domstate {identifier}")
+                        status_output, status_err, _ = self.execute_ssh_command(host_ip, f"sudo virsh domstate {identifier}", port=ssh_port)
                         
                         if status_err or not status_output:
                             # 获取状态失败，设为 unknown
@@ -275,6 +299,9 @@ class VMStatusSyncService:
                             if old_status != 'unknown':
                                 vm.status = 'unknown'
                                 vm.updated_at = datetime.now()
+                                
+                                # 状态变化是写操作，必须双删缓存
+                                delayed_delete_vm(vm.id)
                                 
                                 log_details = {
                                     'old_status': old_status,
@@ -322,6 +349,9 @@ class VMStatusSyncService:
                         if old_status != 'unknown':
                             vm.status = 'unknown'
                             vm.updated_at = datetime.now()
+                            
+                            # 状态变化是写操作，必须双删缓存
+                            delayed_delete_vm(vm.id)
                             
                             log_details = {
                                 'old_status': old_status,
@@ -372,6 +402,9 @@ class VMStatusSyncService:
                     if status_changed:
                         vm.status = new_status
                         vm.updated_at = datetime.now()
+                        
+                        # 状态变化是写操作，必须双删缓存
+                        delayed_delete_vm(vm.id)
                         
                         log_details = {
                             'old_status': old_status,
@@ -438,21 +471,25 @@ class VMStatusSyncService:
         
         try:
             db.session.commit()
+            # 同步完成后失效所有统计缓存
+            invalidate_all_stats()
         except Exception as e:
             current_app.logger.error(f"Failed to commit database changes: {e}")
             db.session.rollback()
         
         return all_results
     
-    def _get_all_vm_ids_and_status_pve(self, host_ip):
+    def _get_all_vm_ids_and_status_pve(self, host_ip, ssh_port=22):
         """
         批量获取 PVE 宿主机上所有 VM 的状态
         
-        返回：dict: {vmid: {'status': str, 'name': str}}
+        :param host_ip: 宿主机 IP 地址
+        :param ssh_port: SSH 端口（默认 22）
+        :return: dict: {vmid: {'status': str, 'name': str}}
         """
         vm_map = {}
         
-        output, error, _ = self.execute_ssh_command(host_ip, "sudo qm list")
+        output, error, _ = self.execute_ssh_command(host_ip, "sudo qm list", port=ssh_port)
         if error or not output:
             return vm_map
         
@@ -498,11 +535,13 @@ class VMStatusSyncService:
                     'vm_ip': vm.vm_ip
                 }
             
-            host_ip = host.host_info.split('_')[0]
+            # 使用 host_ipaddress 和 ssh_port 字段进行 SSH 连接
+            host_ip = host.host_ipaddress
+            ssh_port = host.ssh_port
             host_type = host.virtualization_type
             
             # 检查 SSH 连接
-            test_output, test_error, _ = self.execute_ssh_command(host_ip, "echo test")
+            test_output, test_error, _ = self.execute_ssh_command(host_ip, "echo test", port=ssh_port)
             if test_error or not test_output:
                 # SSH 连接失败，设为 unknown
                 old_status = vm.status
@@ -510,12 +549,15 @@ class VMStatusSyncService:
                     vm.status = 'unknown'
                     vm.updated_at = datetime.now()
                     
+                    # 状态变化是写操作，必须双删缓存
+                    delayed_delete_vm(vm.id)
+                    
                     log_details = {
                         'old_status': old_status,
                         'new_status': 'unknown',
                         'host': host.host_info,
                         'sync_type': 'status_sync',
-                        'error': f'Failed to connect to host {host_ip}'
+                        'error': f'Failed to connect to host {host_ip}:{ssh_port}'
                     }
                     
                     log_change(
@@ -527,6 +569,7 @@ class VMStatusSyncService:
                     )
                     
                     db.session.commit()
+                    invalidate_all_stats()
                     
                     return {
                         'success': True,
@@ -546,7 +589,7 @@ class VMStatusSyncService:
             identifier = None
             
             if host_type == 'pve':
-                vm_info_map = self._get_all_vm_ids_and_status_pve(host_ip)
+                vm_info_map = self._get_all_vm_ids_and_status_pve(host_ip, ssh_port)
                 if not vm_info_map:
                     # 获取 VM 列表失败，设为 unknown
                     old_status = vm.status
@@ -554,12 +597,15 @@ class VMStatusSyncService:
                         vm.status = 'unknown'
                         vm.updated_at = datetime.now()
                         
+                        # 状态变化是写操作，必须双删缓存
+                        delayed_delete_vm(vm.id)
+                        
                         log_details = {
                             'old_status': old_status,
                             'new_status': 'unknown',
                             'host': host.host_info,
                             'sync_type': 'status_sync',
-                            'error': f'Failed to get VM list from host {host_ip}'
+                            'error': f'Failed to get VM list from host {host_ip}:{ssh_port}'
                         }
                         
                         log_change(
@@ -571,6 +617,7 @@ class VMStatusSyncService:
                         )
                         
                         db.session.commit()
+                        invalidate_all_stats()
                         
                         return {
                             'success': True,
@@ -590,7 +637,6 @@ class VMStatusSyncService:
                 identifier = None
                 for vmid, vm_data in vm_info_map.items():
                     vm_name = vm_data.get('name', '')
-                    import re
                     pattern = re.escape(vm.vm_ip) + r'(-|$)'
                     if re.search(pattern, vm_name):
                         identifier = vmid
@@ -614,6 +660,9 @@ class VMStatusSyncService:
                         vm.status = 'unknown'
                         vm.updated_at = datetime.now()
                         
+                        # 状态变化是写操作，必须双删缓存
+                        delayed_delete_vm(vm.id)
+                        
                         log_details = {
                             'old_status': old_status,
                             'new_status': 'unknown',
@@ -631,6 +680,7 @@ class VMStatusSyncService:
                         )
                         
                         db.session.commit()
+                        invalidate_all_stats()
                         
                         return {
                             'success': True,
@@ -650,7 +700,7 @@ class VMStatusSyncService:
                 status = vm_info_map[identifier].get('status', 'stopped')
                 
             elif host_type == 'kvm':
-                vm_list_output, vm_list_err, _ = self.execute_ssh_command(host_ip, "sudo virsh list --all --name")
+                vm_list_output, vm_list_err, _ = self.execute_ssh_command(host_ip, "sudo virsh list --all --name", port=ssh_port)
                 if vm_list_err or not vm_list_output:
                     # 获取 VM 列表失败，设为 unknown
                     old_status = vm.status
@@ -658,12 +708,15 @@ class VMStatusSyncService:
                         vm.status = 'unknown'
                         vm.updated_at = datetime.now()
                         
+                        # 状态变化是写操作，必须双删缓存
+                        delayed_delete_vm(vm.id)
+                        
                         log_details = {
                             'old_status': old_status,
                             'new_status': 'unknown',
                             'host': host.host_info,
                             'sync_type': 'status_sync',
-                            'error': f'Failed to get VM list from host {host_ip}'
+                            'error': f'Failed to get VM list from host {host_ip}:{ssh_port}'
                         }
                         
                         log_change(
@@ -675,6 +728,7 @@ class VMStatusSyncService:
                         )
                         
                         db.session.commit()
+                        invalidate_all_stats()
                         
                         return {
                             'success': True,
@@ -700,6 +754,9 @@ class VMStatusSyncService:
                         vm.status = 'unknown'
                         vm.updated_at = datetime.now()
                         
+                        # 状态变化是写操作，必须双删缓存
+                        delayed_delete_vm(vm.id)
+                        
                         log_details = {
                             'old_status': old_status,
                             'new_status': 'unknown',
@@ -717,6 +774,7 @@ class VMStatusSyncService:
                         )
                         
                         db.session.commit()
+                        invalidate_all_stats()
                         
                         return {
                             'success': True,
@@ -733,7 +791,7 @@ class VMStatusSyncService:
                             'changed': False
                         }
                 
-                status_output, status_err, _ = self.execute_ssh_command(host_ip, f"sudo virsh domstate {identifier}")
+                status_output, status_err, _ = self.execute_ssh_command(host_ip, f"sudo virsh domstate {identifier}", port=ssh_port)
                 
                 if status_err or not status_output:
                     # 获取状态失败，设为 unknown
@@ -741,6 +799,9 @@ class VMStatusSyncService:
                     if old_status != 'unknown':
                         vm.status = 'unknown'
                         vm.updated_at = datetime.now()
+                        
+                        # 状态变化是写操作，必须双删缓存
+                        delayed_delete_vm(vm.id)
                         
                         log_details = {
                             'old_status': old_status,
@@ -759,6 +820,7 @@ class VMStatusSyncService:
                         )
                         
                         db.session.commit()
+                        invalidate_all_stats()
                         
                         return {
                             'success': True,
@@ -787,6 +849,9 @@ class VMStatusSyncService:
                     vm.status = 'unknown'
                     vm.updated_at = datetime.now()
                     
+                    # 状态变化是写操作，必须双删缓存
+                    delayed_delete_vm(vm.id)
+                    
                     log_details = {
                         'old_status': old_status,
                         'new_status': 'unknown',
@@ -804,6 +869,7 @@ class VMStatusSyncService:
                     )
                     
                     db.session.commit()
+                    invalidate_all_stats()
                     
                     return {
                         'success': True,
@@ -828,6 +894,9 @@ class VMStatusSyncService:
                 vm.status = new_status
                 vm.updated_at = datetime.now()
                 
+                # 状态变化是写操作，必须双删缓存
+                delayed_delete_vm(vm.id)
+                
                 log_details = {
                     'old_status': old_status,
                     'new_status': new_status,
@@ -844,6 +913,7 @@ class VMStatusSyncService:
                 )
                 
                 db.session.commit()
+                invalidate_all_stats()
                 
                 return {
                     'success': True,
