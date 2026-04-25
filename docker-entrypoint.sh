@@ -1,7 +1,6 @@
 #!/bin/bash
 set -e
 
-# 配置 SSH 密钥环境
 SSH_DIR="/home/vmcontrolhub/.ssh"
 KEY_FILE="$SSH_DIR/id_rsa"
 
@@ -16,5 +15,10 @@ chown -R 2000:2000 "$SSH_DIR"
 chmod 700 "$SSH_DIR"
 chmod 600 "$KEY_FILE"
 
-# 启动应用
+sleep 1
+
+echo "==> Running database migration..."
+python -c "from app.db_migrate import run_migration; run_migration()"
+
+echo "==> Starting application..."
 exec gunicorn -c gunicorn_config.py run:app
