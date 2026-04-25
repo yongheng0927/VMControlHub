@@ -34,7 +34,7 @@ services:
       start_period: 10s
 
   app:
-    image: ${APP_IMAGE}
+    image: docker.io/vmcontrolhub/app:2.1.0
     ports:
       - 5000:5000
     container_name: vmcontrolhub-app
