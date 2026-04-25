@@ -637,7 +637,7 @@
             }
             
             // 始终显示通知
-            showNotification('info', message);
+            showNotification('info', message, true);
             
             // 始终恢复按钮状态
             syncBtn.disabled = false;
@@ -654,7 +654,7 @@
     });
     
     // 显示通知函数
-    function showNotification(type, message) {
+    function showNotification(type, message, refreshOnClose = false) {
       // 创建遮罩层
       const overlay = document.createElement('div');
       overlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
@@ -719,6 +719,10 @@
         notification.style.opacity = '0';
         setTimeout(() => {
           overlay.remove();
+          // 如果需要刷新页面，在通知关闭后执行刷新
+          if (refreshOnClose) {
+            window.location.reload();
+          }
         }, 300);
       };
       buttonArea.appendChild(closeBtn);
@@ -736,6 +740,10 @@
         notification.style.opacity = '0';
         setTimeout(() => {
           overlay.remove();
+          // 如果需要刷新页面，在通知关闭后执行刷新
+          if (refreshOnClose) {
+            window.location.reload();
+          }
         }, 300);
       };
       
