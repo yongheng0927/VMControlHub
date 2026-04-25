@@ -177,8 +177,16 @@
                 <div class="table-field-value">{{ field.render(item)|safe }}</div>
               {% elif field.db_field == 'created_at' or field.db_field == 'updated_at' %}
                 <div class="text-gray-700 table-field-value">
-                  {% set dt_str = item[field.db_field].strftime('%Y-%m-%d %H:%M:%S') if item[field.db_field] else '' %}
-                    {{ dt_str }}
+                  {% set dt_val = item[field.db_field] %}
+                  {% if dt_val %}
+                    {% if dt_val is string %}
+                      {{ dt_val }}
+                    {% else %}
+                      {{ dt_val.strftime('%Y-%m-%d %H:%M:%S') }}
+                    {% endif %}
+                  {% else %}
+                    -
+                  {% endif %}
                 </div>
               {% elif field.postfix %}
                 <div class="text-gray-700 table-field-value">{{ item[field.db_field] or '-' }}{{ field.postfix }}</div>
