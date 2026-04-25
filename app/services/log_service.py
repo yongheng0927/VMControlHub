@@ -38,6 +38,10 @@ def to_dict(obj):
                 # 递归处理值
                 obj_dict[c.key] = to_dict(value)
             
+            # 检查是否有额外添加的host_info属性（动态组装的关联数据）
+            if hasattr(obj, 'host_info'):
+                obj_dict['host_info'] = obj.host_info
+            
             # 检查是否是Host或VM对象，如果是，添加自定义字段值
             model_name = obj.__class__.__name__
             if model_name in ['Host', 'VM']:
