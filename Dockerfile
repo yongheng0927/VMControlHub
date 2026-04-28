@@ -31,4 +31,6 @@ ENV PATH="/home/vmcontrolhub/.local/bin:${PATH}"
 
 ENV VMCONTROLHUB_VERSION=2.1.0
 
+EXPOSE 5000
+
 ENTRYPOINT ["bash", "/home/vmcontrolhub/docker-entrypoint.sh"]
