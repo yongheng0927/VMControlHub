@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: vmcontrolhub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  serviceName: mysql-headless
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.4.8
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - secretRef:
+            name: mysql-app-secret
+        - secretRef:
+            name: mysql-root-secret
+        - configMapRef:
+            name: mysql-port-configmap
+        - configMapRef:
+            name: timezone-configmap
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        livenessProbe:
+          exec:
+            command: ["mysqladmin", "ping", "-u$(MYSQL_USER)", "-p$(MYSQL_PASSWORD)"]
+          initialDelaySeconds: 30
+          failureThreshold: 5
+
+        readinessProbe:
+          exec:
+            command: ["mysqladmin", "ping", "-u$(MYSQL_USER)", "-p$(MYSQL_PASSWORD)"]
+          initialDelaySeconds: 10
+
+
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: your_storageclass_name
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-headless
+  namespace: vmcontrolhub
+spec:
+  selector:
+    app: mysql
+  clusterIP: None
+  ports:
+  - port:  3306
+    targetPort: 3306

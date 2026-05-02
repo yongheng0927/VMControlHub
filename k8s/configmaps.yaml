@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vmcontrolhub-app-configmap
+  namespace: vmcontrolhub
+data:
+  # app容器自身需要的环境变量
+  TEMP_PASSWD: "admin@123"
+  SSH_USER: "vmcontrolhub"
+  SSH_KEY_FILE: "/home/vmcontrolhub/.ssh/id_rsa"
+
+  # mysql配置信息
+  MYSQL_DATABASE_PORT: "3306"
+  # 使用完全域名访问mysql Pod，减少不必要的域名解析过程
+  MYSQL_DATABASE_HOST: "mysql-0.mysql-headless.vmcontrolhub.svc.cluster.local"
+
+  # redisp配置信息
+  REDIS_PORT: "6379"
+  # 使用完全域名访问redis服务，减少不必要的域名解析过程
+  REDIS_HOST: "redis-svc.vmcontrolhub.svc.cluster.local"
+  REDIS_DB: "0"
+  CACHE_DEFAULT_TIMEOUT: "600"
+  CACHE_TTL_DICT: "43200"
+  CACHE_TTL_OBJECT: "1800"
+  CACHE_TTL_STATS: "300"
+  DELAYED_DELETE_SECONDS: "0.5"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: timezone-configmap
+  namespace: vmcontrolhub
+data:
+  TZ: Asia/Shanghai
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-port-configmap
+  namespace: vmcontrolhub
+data:
+  MYSQL_DATABASE_PORT: "3306"
+
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-port-configmap
+  namespace: vmcontrolhub
+data:
+  REDIS_PORT: "6379"

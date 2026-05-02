@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmcontrolhub-app-deployment
+  namespace: vmcontrolhub
+  labels:
+    app: vmcontrolhub-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: vmcontrolhub-app
+  template:
+    metadata:
+      labels:
+        app: vmcontrolhub-app
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: mysql
+              topologyKey: kubernetes.io/hostname
+      # 由于 K8s 中 Secret 挂载使用的是 tmpfs，默认为只读，这里运行一个初始化容器来把它处理为正常文件
+      initContainers:
+      - name: copy-and-fix-ssh-key
+        image: docker.io/vmcontrolhub/app:2.1.0
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          privileged: false
+        command:
+        - /bin/sh
+        - -c
+        - |
+          cp -L /tmp/ssh/ssh-privatekey /home-ssh/id_rsa
+          cp -L /tmp/ssh/ssh-publickey /home-ssh/id_rsa.pub
+          chmod 700 /home-ssh
+          chmod 600 /home-ssh/id_rsa
+          chmod 644 /home-ssh/id_rsa.pub
+          chown -R vmcontrolhub:vmcontrolhub /home-ssh
+        volumeMounts:
+        - name: ssh-key-readonly
+          mountPath: /tmp/ssh
+        - name: ssh-key-writable
+          mountPath: /home-ssh
+      containers:
+      - name: app
+        image: docker.io/vmcontrolhub/app:2.1.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 15
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+        resources:
+          limits:
+            memory: "1Gi"
+        envFrom:
+        - configMapRef:
+            name: vmcontrolhub-app-configmap
+        - configMapRef:
+            name: timezone-configmap
+        - secretRef:
+            name: redis-secret
+        - secretRef:
+            name: flask-secret
+        - secretRef:
+            name: mysql-app-secret
+        volumeMounts:
+        - name: ssh-key-writable
+          mountPath: /home/vmcontrolhub/.ssh
+        ports:
+        - containerPort: 5000
+      volumes:
+      - name: ssh-key-readonly
+        secret:
+          secretName: ssh-keys-secret
+      - name: ssh-key-writable
+        emptyDir: {}
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmcontrolhub-app-svc
+  namespace: vmcontrolhub
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5000
+    targetPort: 5000
+  selector:
+    app: vmcontrolhub-app

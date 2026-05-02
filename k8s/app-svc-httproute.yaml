@@ -1,0 +1,20 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vmcontrolhub-ui-route
+  namespace: vmcontrolhub
+spec:
+  hostnames:
+  - "your_hostname.com"
+  parentRefs:
+  - name: your_gateway_name
+    namespace: your_gateway_namespace
+    sectionName: your_gateway_listener_name
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: vmcontrolhub-app-svc
+      port: 5000
